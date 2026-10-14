@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,5 +55,25 @@ func TestUnconfiguredServerFailsClosed(t *testing.T) {
 	Handler("").ServeHTTP(w, r)
 	if w.Code != 401 {
 		t.Fatal("unconfigured auth accepted")
+	}
+}
+
+func TestReadiness(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		check  func(context.Context) error
+		status int
+	}{
+		{"local planner", nil, 200},
+		{"database ready", func(context.Context) error { return nil }, 200},
+		{"database unavailable", func(context.Context) error { return errors.New("internal connection details") }, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			HandlerWithReadiness(testToken, tc.check).ServeHTTP(w, httptest.NewRequest("GET", "/readyz", nil))
+			if w.Code != tc.status || strings.Contains(w.Body.String(), "internal connection details") {
+				t.Fatal("invalid or unsafe readiness response")
+			}
+		})
 	}
 }

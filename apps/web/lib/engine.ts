@@ -15,7 +15,10 @@ function engineURL() {
     url.protocol !== "https:" &&
     !(
       url.protocol === "http:" &&
-      ["127.0.0.1", "localhost", "engine"].includes(url.hostname)
+      (["127.0.0.1", "localhost", "engine"].includes(url.hostname) ||
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.railway\.internal$/.test(
+          url.hostname,
+        ))
     )
   )
     throw new Error("Engine requires a private network or HTTPS");

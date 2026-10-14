@@ -1,6 +1,6 @@
 # Regrow Terminal
 
-Primera entrega: terminal privada **exclusivamente de simulación**, con Next.js y un motor de cálculo Go. Todo el código nuevo vive aquí; los cuatro proyectos de `../src` permanecen intactos.
+Terminal privada con Next.js y un motor de cálculo Go. La transición a uso real comienza con infraestructura Railway y base PostgreSQL; **el trading continúa bloqueado y el preview es exclusivamente de simulación**. Todo el código nuevo vive aquí; los cuatro proyectos de `../src` permanecen intactos.
 
 ## Qué funciona
 
@@ -13,16 +13,18 @@ Primera entrega: terminal privada **exclusivamente de simulación**, con Next.js
 - Presupuesto en USDT o porcentaje de una base manual explícita (saldo/equity).
 - Nuevo resultado neto de referencia en cada cálculo: realizado + flotante de ambos lados − comisiones + funding.
 - Cálculo de exposición tras cierres parciales probado unitariamente; el HTTP preview muestra escenarios por nivel completo.
+- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. No guarda todavía datos de las pantallas.
+- Imágenes web/motor para Railway y definición IaC versionada; no desplegadas desde esta entrega.
 
 ## Qué NO funciona todavía
 
-No hay conexión a Binance/Bybit, envío de órdenes, monitor continuo, journal persistido, migración de usuarios antiguos, almacenamiento de API keys, Telegram, facturación ni autenticación multiusuario. Las pantallas lo indican. La migración PostgreSQL es un diseño inicial **no conectado ni aplicado automáticamente**.
+No hay conexión a Binance/Bybit, envío de órdenes, monitor continuo, journal persistido, migración de usuarios antiguos, almacenamiento de API keys, Telegram, facturación ni autenticación multiusuario. Las pantallas lo indican. PostgreSQL debe configurarse explícitamente; las migraciones se aplican mediante un trabajo administrativo separado, nunca automáticamente al arrancar HTTP. Los fixtures aún no son datos de una cuenta real.
 
 La vista previa no valida liquidación, filtros de instrumentos, liquidez ni disponibilidad de margen del exchange. No debe utilizarse como una instrucción ejecutable. Los cálculos de margen son aproximaciones de nocional/apalancamiento.
 
 ## Arranque local en Windows
 
-Requisitos: Node.js 22+ y Go 1.23+.
+Requisitos: Node.js 22+ y Go 1.26.9+ (la imagen de web usa Node.js 24). Go puede descargar el toolchain requerido si tienes la selección automática habilitada.
 
 Desde `terminal/`:
 
@@ -65,6 +67,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run test:standalone
 npm audit --omit=dev
 ```
 
@@ -104,4 +107,4 @@ infra          → imágenes y plantilla de despliegue
 
 Orden siguiente: identidad multiusuario / PostgreSQL → adaptador Binance solo lectura → reconciliación y filtros → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → Bybit / Telegram.
 
-No habilitar órdenes reales hasta completar los controles de [docs/security.md](docs/security.md). Para el despliegue objetivo (Vercel + VPS DigitalOcean + Neon), ver [docs/deployment.md](docs/deployment.md).
+No habilitar órdenes reales hasta completar los controles de [docs/security.md](docs/security.md). El despliegue acordado es web + motor + PostgreSQL en Railway: [docs/deployment.md](docs/deployment.md). Railway Hobby tiene pendiente la solución de IP de salida fija antes de trading. Para ramas, PRs revisados por el propietario y tags de versiones aprobadas, ver [docs/version-control.md](docs/version-control.md).

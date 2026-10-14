@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -12,9 +13,26 @@ import (
 )
 
 func Handler(token string) http.Handler {
+	return HandlerWithReadiness(token, nil)
+}
+
+func HandlerWithReadiness(token string, check func(context.Context) error) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "version": "0.1.0"})
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		databaseStatus := "not_configured"
+		if check != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := check(ctx); err != nil {
+				respond(w, 503, map[string]string{"status": "unavailable", "mode": "simulation", "database": "unavailable"})
+				return
+			}
+			databaseStatus = "available"
+		}
+		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "database": databaseStatus})
 	})
 	mux.HandleFunc("POST /v1/plans/preview", func(w http.ResponseWriter, r *http.Request) {
 		if len(token) < 32 || strings.HasPrefix(token, "replace-with-") || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {

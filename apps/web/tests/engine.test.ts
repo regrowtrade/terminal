@@ -97,3 +97,38 @@ it("does not contact the engine without a configured private token", async () =>
   });
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("contacts an exact Railway private service without exposing its token in results", async () => {
+  vi.stubEnv("ENGINE_URL", "http://engine.railway.internal:8080");
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json({ error: "Synthetic risk error" }, { status: 422 }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  expect(await previewPlan(defaultRequest)).toMatchObject({
+    ok: false,
+    status: 422,
+  });
+  expect(fetch).toHaveBeenCalledWith(
+    new URL("http://engine.railway.internal:8080/v1/plans/preview"),
+    expect.objectContaining({ redirect: "error" }),
+  );
+});
+
+it.each([
+  "http://engine.railway.internal.attacker.example:8080",
+  "http://railway.internal:8080",
+  "http://engine.railway.internal:8080/untrusted",
+  "http://engine.railway.internal:8080?untrusted=true",
+  "http://example.com:8080",
+])("rejects an unsafe engine origin: %s", async (url) => {
+  vi.stubEnv("ENGINE_URL", url);
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  expect(await previewPlan(defaultRequest)).toMatchObject({
+    ok: false,
+    status: 503,
+  });
+  expect(fetch).not.toHaveBeenCalled();
+});

@@ -1,6 +1,6 @@
 # Entregas y criterios de avance
 
-## 0.1 — Base y planificación (actual)
+## 0.1 — Base y planificación
 
 - [x] Interfaz privada responsive, navegación y estados honestos de simulación.
 - [x] Planificador decimal de entrada limpia, recompras y desmonte de cobertura.
@@ -12,8 +12,17 @@
 
 ## 0.2 — Datos reales, solo lectura
 
+Primera rama en revisión: `feat/railway-foundation`, destinada a Railway Hobby, uso personal y Binance Futures USDT. No es todavía una entrega 0.2 completa.
+
+- [x] Definición Railway versionada, imágenes web/motor sin root y comunicación privada.
+- [x] Runner administrativo de migraciones, checksums, bloqueo y comprobación de rol/esquema en el motor.
+- [x] Pruebas PostgreSQL/RLS y builds de contenedor definidos como puertas de CI.
+- [ ] Despliegue aprobado y comprobado en Railway; backups/restauración verificados.
+- [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
+- [ ] Identidad persistida, sesiones revocables y consumo efectivo de datos propios en las vistas.
+
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
-2. Conectar PostgreSQL con migraciones versionadas y rol limitado.
+2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.
 3. Implementar almacenamiento cifrado de credenciales, restricción de permisos e IP.
 4. Adaptador Binance de instrumentos, cuentas, órdenes normales/algo y posiciones.
 5. Snapshots REST + eventos privados; deduplicación, antigüedad de datos y reconexión.
