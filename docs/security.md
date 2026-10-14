@@ -7,6 +7,7 @@
 - Sesiones HMAC con expiración, emisión, nonce y rol verificados; cookies HttpOnly / SameSite=Strict y Secure / __Host en producción.
 - Páginas y API validan sesión independientemente; el proxy no se usa como autorización.
 - Mutaciones POST exigen Origin exacto configurado. No hay CORS público del motor.
+- Login/logout redirigen al `APP_ORIGIN` canónico, no al host interno ni a cabeceras forwarded del proxy. HTTPS obligatorio salvo loopback local; una configuración de origen inválida se rechaza.
 - Throttling de login y preview en memoria. Lectura de cuerpos acotada. Go rechaza campos desconocidos y JSON concatenado; web valida Zod estricto.
 - Tokens del motor exclusivamente server-side; errores sanitizados, no logging de cuerpos o secretos.
 - CSP por petición con nonce de scripts; estilos inline permitidos por la UI. Sin unsafe-inline para scripts de producción. Frame denial, nosniff, restricciones de permisos y no-store en sesiones/API.

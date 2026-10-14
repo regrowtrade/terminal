@@ -151,10 +151,16 @@ try {
     headers: {
       Origin: origin,
       "Content-Type": "application/x-www-form-urlencoded",
+      "X-Forwarded-Host": "untrusted.example",
     },
     body: new URLSearchParams({ password: env.TERMINAL_PASSWORD }),
   });
   assert.equal(login.status, 303, "Login must succeed.");
+  assert.equal(
+    login.headers.get("location"),
+    `${origin}/`,
+    "Proxy headers must not control login redirects.",
+  );
   const setCookie = login.headers.get("set-cookie");
   assert.ok(
     setCookie?.startsWith("__Host-regrow-session="),

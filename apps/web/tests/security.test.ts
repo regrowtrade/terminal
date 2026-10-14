@@ -62,6 +62,12 @@ describe("request protection", () => {
     ])
       expect(sameOrigin(origin, "https://terminal.example")).toBe(false);
     expect(sameOrigin("https://terminal.example", undefined)).toBe(false);
+    expect(
+      sameOrigin("https://terminal.example", "https://terminal.example/path"),
+    ).toBe(false);
+    expect(
+      sameOrigin("http://terminal.example", "http://terminal.example"),
+    ).toBe(false);
   });
   it("caps attempts and releases the window", () => {
     const limiter = new AttemptLimiter(2, 1000);

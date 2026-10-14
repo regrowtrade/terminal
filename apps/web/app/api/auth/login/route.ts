@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookieName, isConfigured } from "@/lib/auth";
 import {
   AttemptLimiter,
+  applicationOrigin,
   issueSession,
   sameOrigin,
   SESSION_SECONDS,
@@ -11,7 +12,12 @@ import { boundedText } from "@/lib/request";
 
 const limiter = new AttemptLimiter(5, 5 * 60_000);
 export async function POST(request: Request) {
-  const location = new URL("/login", request.url);
+  const origin = applicationOrigin(process.env.APP_ORIGIN);
+  if (!origin)
+    return new NextResponse("Configuración de origen no disponible", {
+      status: 503,
+    });
+  const location = new URL("/login", origin);
   const failed = (reason: string) => {
     location.searchParams.set("error", reason);
     return NextResponse.redirect(location, 303);
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
     )
       return failed("invalid");
     limiter.reset();
-    const response = NextResponse.redirect(new URL("/", request.url), 303);
+    const response = NextResponse.redirect(new URL("/", origin), 303);
     response.headers.set("Cache-Control", "no-store");
     response.cookies.set(
       cookieName(),
