@@ -1,0 +1,221 @@
+openapi: 3.1.0
+info:
+  title: Regrow Simulation Engine
+  version: 0.1.0
+  description: Private, stateless planning API. No order execution or exchange connectivity.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Simulation process is running, not an exchange readiness check.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, mode, version]
+                properties:
+                  status: { const: ok }
+                  mode: { const: simulation }
+                  version: { type: string }
+  /v1/plans/preview:
+    post:
+      operationId: previewPlan
+      security:
+        - engineToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanRequest" }
+      responses:
+        "200":
+          description: Hypothetical cumulative scenarios. Not executable orders.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plan" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    engineToken:
+      type: http
+      scheme: bearer
+      description: Server-to-server only. Never expose to browsers.
+  responses:
+    Error:
+      description: Safe validation or authentication error.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: { type: string }
+  schemas:
+    Decimal:
+      type: string
+      pattern: '^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,12})?$'
+      description: Input decimal; positive/nonnegative constraints validated by the engine.
+    CalculatedDecimal:
+      type: string
+      pattern: '^-?[0-9]{1,80}(?:\.[0-9]{1,200})?$'
+      description: Computed decimal, not exchange-quantized. Never convert to binary floats for financial decisions.
+    Hedge:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          longEntry,
+          shortEntry,
+          longQuantity,
+          shortQuantity,
+          markPrice,
+          realizedPnl,
+          feesPaid,
+          fundingNet,
+          closePercent,
+        ]
+      properties:
+        longEntry: { $ref: "#/components/schemas/Decimal" }
+        shortEntry: { $ref: "#/components/schemas/Decimal" }
+        longQuantity: { $ref: "#/components/schemas/Decimal" }
+        shortQuantity: { $ref: "#/components/schemas/Decimal" }
+        markPrice: { $ref: "#/components/schemas/Decimal" }
+        realizedPnl: { $ref: "#/components/schemas/Decimal" }
+        feesPaid: { $ref: "#/components/schemas/Decimal" }
+        fundingNet: { $ref: "#/components/schemas/Decimal" }
+        closePercent: { type: string, enum: ["5", "10"] }
+    PlanRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          mode,
+          symbol,
+          side,
+          entry,
+          quantity,
+          risk,
+          riskUnit,
+          accountReference,
+          accountBasis,
+          rewardRatio,
+          spacingPercent,
+          leverage,
+          maxLevels,
+          maxMargin,
+          costReserve,
+        ]
+      properties:
+        mode: { type: string, enum: [clean, dca, hedge] }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,20}USDT$" }
+        side: { type: string, enum: [LONG, SHORT] }
+        entry: { $ref: "#/components/schemas/Decimal" }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        risk: { $ref: "#/components/schemas/Decimal" }
+        riskUnit: { type: string, enum: [amount, percent] }
+        accountReference: { $ref: "#/components/schemas/Decimal" }
+        accountBasis: { type: string, enum: [equity, wallet] }
+        rewardRatio: { $ref: "#/components/schemas/Decimal" }
+        spacingPercent: { $ref: "#/components/schemas/Decimal" }
+        leverage: { type: integer, minimum: 1, maximum: 125 }
+        maxLevels: { type: integer, minimum: 1, maximum: 11 }
+        maxMargin: { $ref: "#/components/schemas/Decimal" }
+        costReserve: { $ref: "#/components/schemas/Decimal" }
+        hedge: { $ref: "#/components/schemas/Hedge" }
+      allOf:
+        - if:
+            properties: { mode: { const: hedge } }
+          then:
+            required: [hedge]
+          else:
+            not: { required: [hedge] }
+    Level:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          index,
+          price,
+          quantity,
+          cumulativeQuantity,
+          averagePrice,
+          margin,
+          stopPrice,
+          takeProfit,
+          takeProfitQuantity,
+          netExposure,
+        ]
+      properties:
+        index: { type: integer, minimum: 1 }
+        price: { $ref: "#/components/schemas/CalculatedDecimal" }
+        quantity: { $ref: "#/components/schemas/CalculatedDecimal" }
+        cumulativeQuantity: { $ref: "#/components/schemas/CalculatedDecimal" }
+        averagePrice: { $ref: "#/components/schemas/CalculatedDecimal" }
+        margin: { $ref: "#/components/schemas/CalculatedDecimal" }
+        stopPrice:
+          anyOf:
+            - { $ref: "#/components/schemas/CalculatedDecimal" }
+            - { type: "null" }
+        takeProfit:
+          anyOf:
+            - { $ref: "#/components/schemas/CalculatedDecimal" }
+            - { type: "null" }
+        takeProfitQuantity: { $ref: "#/components/schemas/CalculatedDecimal" }
+        netExposure: { $ref: "#/components/schemas/CalculatedDecimal" }
+    Plan:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          mode,
+          symbol,
+          side,
+          simulation,
+          risk,
+          riskInput,
+          riskUnit,
+          accountReference,
+          accountBasis,
+          costReserve,
+          baselinePnl,
+          pnlThreshold,
+          spacingPercent,
+          levels,
+          warnings,
+          stopReason,
+        ]
+      properties:
+        mode: { type: string, enum: [clean, dca, hedge] }
+        symbol: { type: string }
+        side: { type: string, enum: [LONG, SHORT] }
+        simulation: { const: true }
+        risk: { $ref: "#/components/schemas/CalculatedDecimal" }
+        riskInput: { $ref: "#/components/schemas/Decimal" }
+        riskUnit: { type: string, enum: [amount, percent] }
+        accountReference: { $ref: "#/components/schemas/Decimal" }
+        accountBasis: { type: string, enum: [equity, wallet] }
+        costReserve: { $ref: "#/components/schemas/CalculatedDecimal" }
+        baselinePnl:
+          anyOf:
+            - { $ref: "#/components/schemas/CalculatedDecimal" }
+            - { type: "null" }
+        pnlThreshold:
+          anyOf:
+            - { $ref: "#/components/schemas/CalculatedDecimal" }
+            - { type: "null" }
+        spacingPercent: { $ref: "#/components/schemas/CalculatedDecimal" }
+        levels:
+          type: array
+          minItems: 1
+          maxItems: 11
+          items: { $ref: "#/components/schemas/Level" }
+        warnings: { type: array, items: { type: string } }
+        stopReason: { type: string }

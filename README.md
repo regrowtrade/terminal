@@ -1,0 +1,101 @@
+# Regrow Terminal
+
+Primera entrega: terminal privada **exclusivamente de simulación**, con Next.js y un motor de cálculo Go. Todo el código nuevo vive aquí; los cuatro proyectos de `../src` permanecen intactos.
+
+## Qué funciona
+
+- Acceso personal validado en el servidor; sesiones firmadas de 8 horas, cookies HttpOnly, protección de origen, límites de solicitudes y CSP con nonce.
+- Interfaz responsive: dashboard, posiciones ilustrativas filtrables, calculadora, riesgo, journal y configuración.
+- Vistas previas calculadas en Go, no resultados financieros inventados en el navegador.
+- Entrada limpia con relación beneficio/riesgo configurable.
+- Recompras `1, 1, 2, 4…`, separación compuesta, límite de margen y filtro por SL.
+- Cobertura con cierre inicial del 5 % / 10 % y factores 1,50 / 1,20; TP ponderado del lado contrario.
+- Presupuesto en USDT o porcentaje de una base manual explícita (saldo/equity).
+- Nuevo resultado neto de referencia en cada cálculo: realizado + flotante de ambos lados − comisiones + funding.
+- Cálculo de exposición tras cierres parciales probado unitariamente; el HTTP preview muestra escenarios por nivel completo.
+
+## Qué NO funciona todavía
+
+No hay conexión a Binance/Bybit, envío de órdenes, monitor continuo, journal persistido, migración de usuarios antiguos, almacenamiento de API keys, Telegram, facturación ni autenticación multiusuario. Las pantallas lo indican. La migración PostgreSQL es un diseño inicial **no conectado ni aplicado automáticamente**.
+
+La vista previa no valida liquidación, filtros de instrumentos, liquidez ni disponibilidad de margen del exchange. No debe utilizarse como una instrucción ejecutable. Los cálculos de margen son aproximaciones de nocional/apalancamiento.
+
+## Arranque local en Windows
+
+Requisitos: Node.js 22+ y Go 1.23+.
+
+Desde `terminal/`:
+
+```powershell
+npm ci
+./scripts/dev.ps1
+```
+
+El script pide una contraseña de al menos 16 caracteres, genera secretos aleatorios efímeros, inicia el motor y la web y no escribe credenciales a disco. Abre **http://localhost:3000**. Al terminar, detiene el proceso de motor que inició. Los tokens y sesiones de esa ejecución dejan de ser válidos al volver a arrancar.
+
+Si tu política de PowerShell bloquea scripts, revisa la política de tu equipo; no es necesario desactivar globalmente las protecciones. También puedes arrancar ambos procesos manualmente.
+
+### Arranque manual
+
+1. Copia `apps/web/.env.example` a `apps/web/.env.local` y sustituye TODOS los valores `replace-with-…` por secretos únicos. No uses los ejemplos como credenciales.
+2. Configura `APP_ORIGIN=http://localhost:3000` y `ENGINE_URL=http://127.0.0.1:8080`.
+3. En una consola situada en `apps/engine`, establece `ENGINE_API_TOKEN` al mismo token que en la web y ejecuta:
+
+```powershell
+$env:ENGINE_API_TOKEN = '<tu token aleatorio de 32 caracteres o más>'
+go run ./cmd/engine
+```
+
+4. En otra consola, desde `terminal/`, ejecuta `npm run dev`.
+
+El motor **no carga archivos .env automáticamente**. `ENGINE_ADDRESS` por defecto es `127.0.0.1:8080`. Los secretos web nunca utilizan prefijos `NEXT_PUBLIC_`.
+
+## Verificación
+
+Desde `terminal/`:
+
+```powershell
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm audit --omit=dev
+```
+
+Desde `apps/engine/`:
+
+```powershell
+go test ./...
+go vet ./...
+```
+
+Pruebas de navegador desde `terminal/`:
+
+```powershell
+npm exec --workspace @regrow/web -- playwright install chromium
+npm run test:e2e
+```
+
+Las pruebas E2E inician servicios independientes en los puertos 3100/8081 con credenciales únicamente de prueba. No llaman a exchanges. El informe y las capturas quedan en directorios ignorados por Git.
+
+Si la descarga de Chromium no está disponible, puedes usar un Chrome instalado: `$env:PLAYWRIGHT_CHANNEL = 'chrome'` antes de `npm run test:e2e`.
+
+## Reglas financieras
+
+Consulta [docs/strategy-rules.md](docs/strategy-rules.md). El motor utiliza decimales, transmite cantidades como strings y redondea divisiones a 32 decimales. La UI usa números binarios solo para **formatear visualmente** resultados; la sugerencia de riesgo usa enteros escalados y el motor vuelve a calcular el presupuesto de forma independiente.
+
+Cambiar un campo invalida la vista previa previa. No se persisten planes ni se autoriza trading al calcular.
+
+## Arquitectura y próximos pasos
+
+```text
+apps/web       → API privada de preview → apps/engine
+contracts      → OpenAPI del motor
+database       → migraciones futuras
+docs           → reglas, decisiones, seguridad
+infra          → imágenes y plantilla de despliegue
+```
+
+Orden siguiente: identidad multiusuario / PostgreSQL → adaptador Binance solo lectura → reconciliación y filtros → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → Bybit / Telegram.
+
+No habilitar órdenes reales hasta completar los controles de [docs/security.md](docs/security.md). Para el despliegue objetivo (Vercel + VPS DigitalOcean + Neon), ver [docs/deployment.md](docs/deployment.md).

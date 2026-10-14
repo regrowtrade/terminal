@@ -1,0 +1,55 @@
+name: Terminal quality gates
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: terminal-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+          cache-dependency-path: apps/engine/go.sum
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+      - name: Verify Go formatting
+        run: test -z "$(gofmt -l cmd internal)"
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+          cache-dependency-path: apps/engine/go.sum
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev
+      - run: npm exec --workspace @regrow/web -- playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-diagnostics
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results

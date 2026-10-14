@@ -1,0 +1,22 @@
+{
+  "name": "regrow-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @regrow/web",
+    "build": "npm run build --workspace @regrow/web",
+    "start": "npm run start --workspace @regrow/web",
+    "lint": "npm run lint --workspace @regrow/web",
+    "typecheck": "npm run typecheck --workspace @regrow/web",
+    "test": "npm run test --workspace @regrow/web",
+    "test:e2e": "npm run test:e2e --workspace @regrow/web --",
+    "format": "prettier --write apps/web docs contracts README.md package.json",
+    "format:check": "prettier --check apps/web docs contracts README.md package.json"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
