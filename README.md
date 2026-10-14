@@ -33,6 +33,10 @@ npm ci
 
 El script pide una contraseña de al menos 16 caracteres, genera secretos aleatorios efímeros, inicia el motor y la web y no escribe credenciales a disco. Abre **http://localhost:3000**. Al terminar, detiene el proceso de motor que inició. Los tokens y sesiones de esa ejecución dejan de ser válidos al volver a arrancar.
 
+Si el puerto predeterminado `8080` está ocupado (por ejemplo, por Apache), el script selecciona un puerto libre y configura la web para usarlo, sin detener el otro servicio. Comprueba que el motor de simulación esté listo antes de iniciar la web. Si indicas `-EnginePort`, ese puerto debe estar libre.
+
+Para elegirlo explícitamente: `./scripts/dev.ps1 -EnginePort 8082`.
+
 Si tu política de PowerShell bloquea scripts, revisa la política de tu equipo; no es necesario desactivar globalmente las protecciones. También puedes arrancar ambos procesos manualmente.
 
 ### Arranque manual
@@ -49,6 +53,8 @@ go run ./cmd/engine
 4. En otra consola, desde `terminal/`, ejecuta `npm run dev`.
 
 El motor **no carga archivos .env automáticamente**. `ENGINE_ADDRESS` por defecto es `127.0.0.1:8080`. Los secretos web nunca utilizan prefijos `NEXT_PUBLIC_`.
+
+Si la vista previa indica que la dirección no ofrece el motor, comprueba que `ENGINE_URL` apunte al puerto del proceso Go, no a Apache u otro servicio. En el arranque manual, cambia tanto `ENGINE_ADDRESS` como `ENGINE_URL` al mismo puerto libre y reinicia ambos procesos. Si la conexión privada es rechazada, comprueba que ambos usen el mismo `ENGINE_API_TOKEN`, sin compartirlo ni mostrarlo en logs.
 
 ## Verificación
 
