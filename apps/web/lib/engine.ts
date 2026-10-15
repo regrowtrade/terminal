@@ -1,7 +1,7 @@
 import "server-only";
 import { planSchema, type PlanRequest } from "./plans";
 
-function engineURL() {
+export function engineURL() {
   const url = new URL(process.env.ENGINE_URL ?? "http://127.0.0.1:8080");
   if (
     url.username ||

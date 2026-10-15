@@ -19,7 +19,8 @@ Primera rama en revisión: `feat/railway-foundation`, destinada a Railway Hobby,
 - [x] Pruebas PostgreSQL/RLS y builds de contenedor definidos como puertas de CI.
 - [ ] Despliegue aprobado y comprobado en Railway; backups/restauración verificados.
 - [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
-- [ ] Identidad persistida, sesiones revocables y consumo efectivo de datos propios en las vistas.
+- [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas en `feat/persistent-owner-sessions` (PR dependiente de infraestructura; despliegue pendiente).
+- [ ] Consumo efectivo de datos de cuentas/planes propios en las vistas.
 
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
 2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.

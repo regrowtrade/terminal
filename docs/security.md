@@ -5,6 +5,8 @@
 - Acceso privado sin credenciales por defecto. Contraseña de 16+ caracteres y secreto de 32+; los placeholders se rechazan.
 - Comparación de contraseña mediante scrypt y timingSafeEqual; token del motor comparado en tiempo constante.
 - Sesiones HMAC con expiración, emisión, nonce y rol verificados; cookies HttpOnly / SameSite=Strict y Secure / __Host en producción.
+- En producción, cada sesión debe estar registrada en PostgreSQL: digest HMAC ligado a cookie + contraseña, nunca cookie ni contraseña en la base. Cada petición protegida consulta vigencia/revocación sin caché. La identidad personal se crea por migración administrativa; el runtime no puede reasignarla ni aceptar un userId del navegador.
+- Logout revoca una copia de la cookie; «Cerrar todas las sesiones» requiere una sesión vigente. Crear/revocar se serializa en PostgreSQL. Auditoría de altas y revocaciones sin tokens, hashes ni contraseñas; duración máxima de ocho horas y 20 sesiones activas. Cambiar contraseña o SESSION_SECRET invalida también las cookies anteriores (reiniciar/redeploy de todas las instancias web).
 - Páginas y API validan sesión independientemente; el proxy no se usa como autorización.
 - Mutaciones POST exigen Origin exacto configurado. No hay CORS público del motor.
 - Login/logout redirigen al `APP_ORIGIN` canónico, no al host interno ni a cabeceras forwarded del proxy. HTTPS obligatorio salvo loopback local; una configuración de origen inválida se rechaza.
@@ -13,14 +15,16 @@
 - CSP por petición con nonce de scripts; estilos inline permitidos por la UI. Sin unsafe-inline para scripts de producción. Frame denial, nosniff, restricciones de permisos y no-store en sesiones/API.
 - Motor privado por defecto, timeouts HTTP y cierre controlado.
 - No existe endpoint de ejecución ni formulario de API keys.
-- Base PostgreSQL opcional en local y obligatoria en Railway: pool acotado, rechazo de roles administrativos/propietarios y comprobación de historial del esquema. `SET LOCAL app.user_id` se limita a la transacción; aún no hay endpoints que persistan identidades o planes.
+- Base PostgreSQL opcional en desarrollo local y obligatoria para acceso en producción: pool acotado, rechazo de roles administrativos/propietarios y comprobación de historial del esquema. `SET LOCAL app.user_id` se limita a la transacción; sesiones con RLS, sin endpoints de persistencia de planes aún.
 - Migraciones en proceso administrativo separado, sin credenciales de administración en servicios HTTP. Checksums, bloqueo y aplicación transaccional; no rollback destructivo automático.
 
 ## Límites actuales
 
-Es acceso personal, no un sistema de identidad comercial. La limitación en memoria no es distribuida y se reinicia al desplegar; Vercel puede ejecutar múltiples instancias. No abrir el producto al público con este mecanismo. Logout borra la cookie pero no revoca una copia robada; rotar SESSION_SECRET revoca todas las sesiones. Cambiar solo la contraseña no revoca sesiones anteriores. No hay MFA ni recovery.
+Es acceso personal, no un sistema de identidad comercial. La contraseña sigue en el gestor de secretos del servidor; no hay registro, hash de contraseña administrado desde UI, MFA ni recovery. El rate limit de login/preview aún está en memoria y se reinicia al desplegar: no escalar ni abrir registros hasta incorporar limitación compartida. La verificación de contraseña vive en la web; el token privado del motor es una credencial de confianza capaz de registrar sesiones, debe permanecer protegido.
 
-Hay conexión y verificación PostgreSQL en el motor cuando se configura, pero no se guardan todavía identidades, sesiones, planes ni auditoría desde HTTP. Las tablas y el helper transaccional incorporan FKs/RLS y tienen pruebas de integración definidas en CI; eso no sustituye la autorización de futuros endpoints. No hay cifrado de credenciales de exchange ni monitor de posiciones. El despliegue y las pruebas contra Railway están pendientes.
+`SESSION_BACKEND=local` solo está permitido fuera de producción: sesiones revocables en memoria, perdidas al reiniciar, sin auditoría durable. Producción usa `postgres` por defecto y rechaza explícitamente `local` o modos desconocidos. Una caída de base/motor bloquea acceso; nunca degrada a cookies stateless. Si logout no puede confirmar revocación devuelve 503 y conserva la cookie para reintentar, sin afirmar éxito. Solicitudes ya autorizadas pueden terminar tras una revocación; futuras operaciones financieras deberán verificar autorización junto a su transacción durable.
+
+Se persisten identidad personal, sesiones y eventos de sesión. No se guardan aún planes ni datos del exchange desde HTTP. Las tablas y el helper transaccional incorporan FKs/RLS; eso no sustituye la autorización de futuros endpoints. No hay cifrado de credenciales de exchange ni monitor de posiciones. El despliegue y las pruebas contra Railway están pendientes.
 
 ## Dependencias
 

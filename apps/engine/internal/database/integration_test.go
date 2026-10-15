@@ -104,6 +104,7 @@ func TestPostgresIsolationAndMigrations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	testSessionLifecycle(t, ctx, store, setup, u.String())
 	if err := store.WithOwner(ctx, ownerA, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO exchange_accounts(id, owner_id, exchange, environment, name) VALUES ('00000000-0000-4000-8000-000000000003', $1, 'binance', 'testnet', 'Synthetic')`, ownerA)
 		return err
@@ -155,7 +156,7 @@ func TestPostgresIsolationAndMigrations(t *testing.T) {
 		t.Fatal("failed callback was not rolled back")
 	}
 	broken := append(append([]Migration(nil), migrations...), Migration{
-		Name: "0002_broken.sql", Checksum: "synthetic-invalid-migration",
+		Name: "0003_broken.sql", Checksum: "synthetic-invalid-migration",
 		SQL: "CREATE TABLE atomic_check(id int); SELECT 1 / 0;",
 	})
 	if err := Migrate(ctx, testURI, broken); err == nil {

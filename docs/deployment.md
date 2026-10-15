@@ -29,7 +29,7 @@ El plan contratado es Hobby. Según la [documentación de IP de salida estática
 4. Tras aprobar el plan, aplicar interactivamente. La fuente declarada es `main`, no la rama del PR. Generar dominio HTTPS **solo para web** y establecer `APP_ORIGIN` al origen exacto, sin path. Dejar motor y PostgreSQL sin exposición pública.
 5. Ejecutar/desplegar explícitamente `migrator` y comprobar su finalización satisfactoria. Solo ese trabajo recibe `MIGRATION_DATABASE_URL` administrativa. No configurar esta variable en motor ni web. No configurar migraciones como build ni como tarea del servidor HTTP.
 6. En una consola segura de PostgreSQL, crear `terminal_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS` con contraseña única, sin membresía de roles propietarios/administrativos. Ejecutar `database/runtime-grants.sql` después de las migraciones. No utilizar el usuario `postgres` en el motor.
-7. Configurar `engine.DATABASE_URL` con ese rol limitado, host privado y base de datos correctos. La variable se preserva en IaC y **no** referencia la URL administrativa del producto PostgreSQL. Redeploy del motor: `DATABASE_REQUIRED=true` bloquea un arranque sin base; el esquema y los privilegios se verifican al conectar y en `/readyz`.
+7. Configurar `engine.DATABASE_URL` con ese rol limitado, host privado y base de datos correctos. La variable se preserva en IaC y **no** referencia la URL administrativa del producto PostgreSQL. Redeploy del motor: `DATABASE_REQUIRED=true` bloquea un arranque sin base; el esquema y los privilegios se verifican al conectar y en `/readyz`. La migración `0002_personal_sessions.sql` provisiona una identidad personal de UUID aleatorio, estable en esa base; no introduce credenciales. Reaplicar `runtime-grants.sql` tras actualizar. La web usa `SESSION_BACKEND=postgres`; no puede iniciar sesión en producción sin registro persistido.
 8. Desplegar web, iniciar sesión y verificar preview. Los datos ilustrativos siguen identificados como tales hasta que implementemos las vistas conectadas. No abrir registros públicos con el login actual.
 
 ## Migraciones y comprobaciones
@@ -45,8 +45,16 @@ go run ./cmd/migrate
 
 El motor no carga `.env`. `MIGRATIONS_DIR` por defecto es `../../database/migrations`; la imagen usa `/opt/terminal/migrations`. PostgreSQL externo a loopback/Railway requiere `sslmode=verify-full` y CA confiable. El endpoint `/healthz` comprueba liveness; `/readyz` verifica dependencias configuradas y no devuelve URLs ni errores del driver. Ninguno comprueba conexión a Binance o protección de posiciones.
 
-Las pruebas PostgreSQL se ejecutan en CI contra un contenedor desechable. Para ejecutarlas localmente, configurar `TEST_DATABASE_URL` apuntando **solo a un servidor de pruebas**, con permisos de crear bases/roles; crean y eliminan únicamente su base/rol de nombre aleatorio. Sin esa variable se omiten explícitamente. Nunca apuntarla a producción.
+Las pruebas PostgreSQL se ejecutan en CI contra un contenedor desechable. Para ejecutarlas localmente, configurar `TEST_DATABASE_URL` apuntando **solo a un servidor de pruebas**, con permisos de crear bases/roles; crean y eliminan únicamente su base/rol de nombre aleatorio. Sin esa variable se omiten explícitamente. Nunca apuntarla a producción. `npm run test:standalone` usa esa misma variable (solo loopback) para probar el flujo completo de producción: PostgreSQL real, dos dispositivos, preview y rechazo de cookies copiadas tras logout individual/global. Sin base verifica que producción bloquea login, sin degradar a sesión local, y comprueba el preview directo del motor con entradas sintéticas.
+
+## Operación de sesiones personales
+
+- Las sesiones antiguas firmadas sin registro dejan de ser válidas: iniciar sesión de nuevo después de esta actualización. Las sesiones persistidas sobreviven a reinicios de web/motor si se conservan secretos y base.
+- En Configuración, «Cerrar todas las sesiones» invalida las sesiones existentes, incluida la actual. Un login posterior con contraseña correcta sigue permitido. Límite de 20 sesiones activas; cerrar las existentes o esperar su expiración antes de abrir más.
+- Cambiar `TERMINAL_PASSWORD` o `SESSION_SECRET` y redesplegar todas las instancias web invalida sus cookies anteriores. No se elimina historial de auditoría. Los registros revocados/expirados se depuran al iniciar una nueva sesión.
+- Si la base cae, las peticiones protegidas se rechazan. Logout responde 503 cuando no puede confirmar la revocación: reintentar cuando el servicio vuelva. No asumir revocación solo por cerrar una pestaña.
+- El login y preview conservan rate limiting local: mantener una réplica, acceso privado y no habilitar registros públicos. MFA y throttling compartido siguen pendientes antes de trading real.
 
 ## Siguientes puertas de seguridad
 
-Identidad personal persistida y sesiones revocables → credenciales cifradas y Binance solo lectura → snapshots/eventos reconciliados → ejecución testnet con recuperación/idempotencia → revisión operativa y activación gradual. No hay claves de exchange, órdenes ni retiros en esta entrega.
+Revisar y desplegar identidad/sesiones → credenciales cifradas y Binance solo lectura → snapshots/eventos reconciliados → ejecución testnet con recuperación/idempotencia → revisión operativa y activación gradual. No hay claves de exchange, órdenes ni retiros en esta entrega.

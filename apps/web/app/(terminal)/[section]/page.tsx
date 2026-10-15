@@ -18,6 +18,7 @@ import { Positions } from "@/components/positions";
 import { Planner } from "@/components/planner";
 import { PlanButton } from "@/components/workspace";
 import { requireOwner } from "@/lib/auth";
+import { sessionBackend } from "@/lib/sessions";
 
 export default async function Section({
   params,
@@ -166,8 +167,20 @@ export default async function Section({
               label="Autenticación"
               value="Contraseña privada del servidor"
             />
-            <Setting label="Sesión" value="Firmada · HttpOnly · 8 horas" />
+            <Setting
+              label="Sesión"
+              value={
+                sessionBackend() === "postgres"
+                  ? "PostgreSQL · Revocable · 8 horas"
+                  : "Local de desarrollo · Se pierde al reiniciar"
+              }
+            />
             <Setting label="Autorización" value="Validada en páginas y API" />
+            <form method="post" action="/api/auth/logout-all">
+              <button className="button secondary" type="submit">
+                Cerrar todas las sesiones
+              </button>
+            </form>
             <p className="muted-copy">
               <Fingerprint size={15} /> El acceso multiusuario y MFA se
               incorporarán antes de abrir el producto al público.
@@ -209,7 +222,11 @@ export default async function Section({
               <Setting label="Motor" value="Go · Aritmética decimal" />
               <Setting
                 label="Persistencia"
-                value="Esquema diseñado; no conectado"
+                value={
+                  sessionBackend() === "postgres"
+                    ? "Identidad y sesiones · Planes pendientes"
+                    : "Sesiones locales · Sin datos reales"
+                }
               />
               <Setting label="Trading real" value="Deshabilitado por diseño" />
             </div>
