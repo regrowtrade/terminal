@@ -107,17 +107,29 @@ export class AttemptLimiter {
   }
 }
 
+export function applicationOrigin(expected: string | undefined): URL | null {
+  if (!expected) return null;
+  try {
+    const url = new URL(expected);
+    if (expected !== url.origin) return null;
+    if (
+      url.protocol !== "https:" &&
+      !(
+        url.protocol === "http:" &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      )
+    )
+      return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export function sameOrigin(
   origin: string | null,
   expected: string | undefined,
 ): boolean {
-  if (!origin || !expected) return false;
-  try {
-    return (
-      new URL(origin).origin === new URL(expected).origin &&
-      origin === new URL(origin).origin
-    );
-  } catch {
-    return false;
-  }
+  const configured = applicationOrigin(expected);
+  return configured !== null && origin === configured.origin;
 }

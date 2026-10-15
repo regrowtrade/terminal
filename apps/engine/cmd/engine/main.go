@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"regrow/engine/internal/database"
 	"regrow/engine/internal/httpapi"
 )
 
@@ -24,7 +25,39 @@ func main() {
 	if address == "" {
 		address = "127.0.0.1:8080"
 	}
+	if required := os.Getenv("DATABASE_REQUIRED"); required != "" && required != "true" && required != "false" {
+		slog.Error("DATABASE_REQUIRED debe ser true o false")
+		os.Exit(1)
+	}
+	var store *database.Store
+	uri := os.Getenv("DATABASE_URL")
+	if uri == "" && os.Getenv("DATABASE_REQUIRED") == "true" {
+		slog.Error("PostgreSQL es obligatorio en este despliegue; configura DATABASE_URL con un rol limitado")
+		os.Exit(1)
+	}
+	if uri != "" {
+		directory := os.Getenv("MIGRATIONS_DIR")
+		if directory == "" {
+			directory = "../../database/migrations"
+		}
+		migrations, err := database.Load(directory)
+		if err != nil {
+			slog.Error(err.Error())
+			os.Exit(1)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		store, err = database.Open(ctx, uri, migrations)
+		cancel()
+		if err != nil {
+			slog.Error(err.Error())
+			os.Exit(1)
+		}
+		defer store.Close()
+	}
 	server := httpapi.NewServer(address, token)
+	if store != nil {
+		server.Handler = httpapi.HandlerWithReadiness(token, store.Ready)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	failure := make(chan error, 1)

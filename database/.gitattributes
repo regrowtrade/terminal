@@ -1,0 +1,2 @@
+# Migration checksums must be identical on Windows, CI and Railway.
+*.sql text eol=lf

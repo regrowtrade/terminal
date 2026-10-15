@@ -15,7 +15,10 @@ function engineURL() {
     url.protocol !== "https:" &&
     !(
       url.protocol === "http:" &&
-      ["127.0.0.1", "localhost", "engine"].includes(url.hostname)
+      (["127.0.0.1", "localhost", "engine"].includes(url.hostname) ||
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.railway\.internal$/.test(
+          url.hostname,
+        ))
     )
   )
     throw new Error("Engine requires a private network or HTTPS");
@@ -60,6 +63,20 @@ export async function previewPlan(request: PlanRequest) {
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
     });
+    if (response.status === 401 || response.status === 403)
+      return {
+        ok: false as const,
+        status: 503,
+        error:
+          "El motor rechazó la conexión privada. Configura el mismo ENGINE_API_TOKEN en la web y el motor y reinicia ambos. No se envió ninguna orden.",
+      };
+    if (response.status === 404 || response.status === 405)
+      return {
+        ok: false as const,
+        status: 503,
+        error:
+          "La dirección configurada no ofrece la vista previa del motor. Comprueba ENGINE_URL y que el puerto no esté ocupado por otro servicio. No se envió ninguna orden.",
+      };
     if (response.status === 422) {
       const body: unknown = await response.json();
       const error =

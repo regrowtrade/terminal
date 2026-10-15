@@ -21,6 +21,35 @@ paths:
                   status: { const: ok }
                   mode: { const: simulation }
                   version: { type: string }
+  /readyz:
+    get:
+      operationId: readiness
+      description: Checks configured PostgreSQL role and migration checksums. Not an exchange or execution readiness check.
+      responses:
+        "200":
+          description: Configured dependencies are ready; local planning can run without PostgreSQL.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, mode, database]
+                properties:
+                  status: { const: ok }
+                  mode: { const: simulation }
+                  database: { enum: [available, not_configured] }
+        "503":
+          description: PostgreSQL, runtime permissions or the schema is unavailable. No connection details are exposed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, mode, database]
+                properties:
+                  status: { const: unavailable }
+                  mode: { const: simulation }
+                  database: { const: unavailable }
   /v1/plans/preview:
     post:
       operationId: previewPlan

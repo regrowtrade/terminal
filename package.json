@@ -10,13 +10,17 @@
     "build": "npm run build --workspace @regrow/web",
     "start": "npm run start --workspace @regrow/web",
     "lint": "npm run lint --workspace @regrow/web",
-    "typecheck": "npm run typecheck --workspace @regrow/web",
+    "typecheck": "npm run typecheck --workspace @regrow/web && tsc -p .railway/tsconfig.json",
     "test": "npm run test --workspace @regrow/web",
     "test:e2e": "npm run test:e2e --workspace @regrow/web --",
-    "format": "prettier --write apps/web docs contracts README.md package.json",
-    "format:check": "prettier --check apps/web docs contracts README.md package.json"
+    "test:standalone": "node scripts/test-standalone.mjs",
+    "format": "prettier --write apps/web .railway scripts/*.mjs docs contracts README.md package.json",
+    "format:check": "prettier --check apps/web .railway scripts/*.mjs docs contracts README.md package.json"
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "railway": "3.16.0"
   }
 }
