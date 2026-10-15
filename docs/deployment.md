@@ -52,6 +52,7 @@ Las pruebas PostgreSQL se ejecutan en CI contra un contenedor desechable. Para e
 - Las sesiones antiguas firmadas sin registro dejan de ser válidas: iniciar sesión de nuevo después de esta actualización. Las sesiones persistidas sobreviven a reinicios de web/motor si se conservan secretos y base.
 - En Configuración, «Cerrar todas las sesiones» invalida las sesiones existentes, incluida la actual. Un login posterior con contraseña correcta sigue permitido. Límite de 20 sesiones activas; cerrar las existentes o esperar su expiración antes de abrir más.
 - Cambiar `TERMINAL_PASSWORD` o `SESSION_SECRET` y redesplegar todas las instancias web invalida sus cookies anteriores. No se elimina historial de auditoría. Los registros revocados/expirados se depuran al iniciar una nueva sesión.
+- Las sesiones invalidadas solo por rotación aún cuentan en el límite hasta su expiración; si no queda una cookie válida y se alcanzó el límite, un administrador debe revocar las filas de `owner_sessions` del propietario desde una consola segura (con el contexto RLS apropiado), o esperar ocho horas. No dar permisos administrativos al motor para resolverlo.
 - Si la base cae, las peticiones protegidas se rechazan. Logout responde 503 cuando no puede confirmar la revocación: reintentar cuando el servicio vuelva. No asumir revocación solo por cerrar una pestaña.
 - El login y preview conservan rate limiting local: mantener una réplica, acceso privado y no habilitar registros públicos. MFA y throttling compartido siguen pendientes antes de trading real.
 

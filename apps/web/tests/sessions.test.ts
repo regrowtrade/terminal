@@ -84,19 +84,35 @@ it("credential rotation changes the lookup digest", () => {
   expect(sessionDigest(token)).not.toBe(digest);
 });
 
-it("rejects malformed or expired identity responses", async () => {
+it("rejects malformed identity responses", async () => {
   for (const body of [
     { ...identity(), role: "admin" },
-    { ...identity(), expiresAt: new Date(0).toISOString() },
     { ...identity(), token: "never-return-this" },
   ]) {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
-    try {
-      expect(await sessionOperation("resolve", cookie())).toBe(false);
-    } catch (error) {
-      expect(error).toBeInstanceOf(Error);
-    }
+    await expect(sessionOperation("resolve", cookie())).rejects.toThrow(
+      "sesión",
+    );
   }
+});
+
+it("rejects expired identity responses", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ ...identity(), expiresAt: new Date(0).toISOString() }),
+      ),
+  );
+  expect(await sessionOperation("resolve", cookie())).toBe(false);
+});
+
+it("defaults production to PostgreSQL and rejects unknown backends", () => {
+  vi.stubEnv("SESSION_BACKEND", undefined);
+  expect(sessionBackend()).toBe("postgres");
+  vi.stubEnv("SESSION_BACKEND", "unknown");
+  expect(sessionBackend()).toBeNull();
 });
 
 it("development sessions are revocable, not stateless", async () => {

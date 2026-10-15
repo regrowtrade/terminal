@@ -64,6 +64,7 @@ const env = {
 delete env.DATABASE_URL;
 delete env.MIGRATION_DATABASE_URL;
 delete env.MIGRATIONS_DIR;
+delete env.TEST_DATABASE_URL;
 // No production URLs: an explicit disposable loopback test server only.
 let admin;
 let setup;
@@ -110,8 +111,8 @@ async function prepareDatabase() {
 
 const children = [];
 const startupErrors = [];
-function start(command, args, cwd) {
-  const child = spawn(command, args, { cwd, env, stdio: "inherit" });
+function start(command, args, cwd, childEnv = env) {
+  const child = spawn(command, args, { cwd, env: childEnv, stdio: "inherit" });
   child.once("error", () =>
     startupErrors.push("No se pudo iniciar un servicio de prueba."),
   );
@@ -153,7 +154,9 @@ async function stop(child) {
 try {
   await prepareDatabase();
   start(binary, [], engineDirectory);
-  start(process.execPath, [join(standalone, "server.js")], standalone);
+  const webEnv = { ...env };
+  delete webEnv.DATABASE_URL;
+  start(process.execPath, [join(standalone, "server.js")], standalone, webEnv);
   await waitUntilReady(`${engineOrigin}/readyz`);
   await waitUntilReady(`${origin}/login`);
   const planRequest = {
