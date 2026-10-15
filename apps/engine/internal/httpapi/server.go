@@ -19,8 +19,13 @@ func HandlerWithReadiness(token string, check func(context.Context) error) http.
 }
 
 func HandlerWithSessions(token string, check func(context.Context) error, sessions SessionStore) http.Handler {
+	return HandlerWithConnections(token, check, sessions, nil)
+}
+
+func HandlerWithConnections(token string, check func(context.Context) error, sessions SessionStore, connections ConnectionService) http.Handler {
 	mux := http.NewServeMux()
 	registerSessions(mux, token, sessions)
+	registerConnections(mux, token, connections)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "version": "0.1.0"})
 	})
@@ -81,5 +86,5 @@ func respond(w http.ResponseWriter, status int, data any) {
 }
 
 func NewServer(address, token string) *http.Server {
-	return &http.Server{Addr: address, Handler: Handler(token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
+	return &http.Server{Addr: address, Handler: Handler(token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 }

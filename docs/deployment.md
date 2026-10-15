@@ -58,4 +58,6 @@ Las pruebas PostgreSQL se ejecutan en CI contra un contenedor desechable. Para e
 
 ## Siguientes puertas de seguridad
 
+La siguiente rama dependiente, `feat/binance-readonly-vault`, agrega el migrador 0003, el CLI administrativo `/usr/local/bin/credentials` y un panel de lectura REST manual. Está desactivada por defecto; no copiar KEKs al servicio web/migrador ni introducir claves reales hasta resolver salida fija. La definición IaC preserva variables del motor, no las crea con secretos/defaults. Guía de habilitación, límites y rotación: [binance-readonly.md](binance-readonly.md).
+
 Revisar y desplegar identidad/sesiones → credenciales cifradas y Binance solo lectura → snapshots/eventos reconciliados → ejecución testnet con recuperación/idempotencia → revisión operativa y activación gradual. No hay claves de exchange, órdenes ni retiros en esta entrega.

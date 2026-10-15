@@ -21,6 +21,8 @@ Primera rama en revisión: `feat/railway-foundation`, destinada a Railway Hobby,
 - [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
 - [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas en `feat/persistent-owner-sessions` (PR dependiente de infraestructura; despliegue pendiente).
 - [ ] Consumo efectivo de datos de cuentas/planes propios en las vistas.
+- [x] En `feat/binance-readonly-vault`: envelopes cifrados con rotación administrativa y RLS, control de permisos/IP y panel manual de saldos/posiciones Binance USDT. Desactivado por defecto, sin claves reales ni despliegue verificado; no equivale a sincronización continua.
+- [ ] Instrumentos/filtros, órdenes normales/algo, snapshots persistidos y eventos privados reconciliados; reemplazo de fixtures en las vistas conectadas.
 
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
 2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.

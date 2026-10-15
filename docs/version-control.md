@@ -15,3 +15,5 @@
 `feat/railway-foundation`: commit separado para la corrección del puerto de preview, seguido de infraestructura Railway y base PostgreSQL. No incluye datos privados del exchange ni habilita trading. La versión `0.1.0` del contrato de preview se conserva: `/readyz` es una adición compatible y no representa una release de ejecución real.
 
 `feat/persistent-owner-sessions`: entrega dependiente con identidad personal, sesiones persistidas/revocables y auditoría. Mientras infraestructura esté pendiente, su PR apunta a `feat/railway-foundation` para mostrar solo el nuevo alcance. Revisar/mergear primero infraestructura; después cambiar la base del segundo PR a `main` y comprobar diff/CI. No mergear la segunda rama dentro de la primera para saltar la revisión por entrega. Sin tags de release antes de aprobación.
+
+`feat/binance-readonly-vault`: depende de sesiones; su PR apunta inicialmente a `feat/persistent-owner-sessions`. Revisar en orden infraestructura → sesiones → credenciales/lectura; cambiar la base a `main` después de integrar su dependencia y volver a comprobar diff/CI. Sin ejecución ni despliegue automático de ramas de trabajo.

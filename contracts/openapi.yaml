@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Regrow Simulation Engine
   version: 0.1.0
-  description: Private planning and personal session API. No order execution or exchange connectivity.
+  description: Private planning, personal sessions and opt-in Binance REST reads. No order execution; live connections disabled by default.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -98,6 +98,67 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/list:
+    post:
+      operationId: listBinanceReadAccounts
+      description: Validates a persisted personal session and lists owned local metadata only. Does not contact Binance or return credentials. Enabled reports configuration, not a successful exchange connection.
+      security: [{ engineToken: [] }]
+      requestBody: { $ref: "#/components/requestBodies/SessionDigest" }
+      responses:
+        "200":
+          description: Safe account metadata and read feature configuration.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [enabled, accounts]
+                properties:
+                  enabled: { type: boolean }
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, name, exchange, environment]
+                      properties:
+                        id: { type: string, format: uuid }
+                        name: { type: string, minLength: 1, maxLength: 80 }
+                        exchange: { const: binance }
+                        environment: { const: production }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/snapshot:
+    post:
+      operationId: readBinanceSnapshot
+      description: Opt-in manual USDT account/position REST reads after session, ownership, decryption and least-privilege/IP verification. Multiple non-atomic requests, no orders, no streams or retries at application level. Unsupported/incomplete exposures fail without returning a partial result. Never use as execution readiness.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Complete response for the supported REST subset only; not atomic or continuously synchronized. Other account assets are kept separate and not summed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinanceReadSnapshot" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/plans/preview:
     post:
       operationId: previewPlan
@@ -169,6 +230,65 @@ components:
             properties:
               error: { type: string }
   schemas:
+    ExchangeDecimal:
+      type: string
+      pattern: '^-?(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'
+      description: Unmodified decimal string from the exchange, never binary float arithmetic.
+    BinanceReadSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          source,
+          mode,
+          capturedAt,
+          consistency,
+          executionReady,
+          assets,
+          positions,
+        ]
+      properties:
+        source: { const: binance-production }
+        mode: { const: read_only }
+        capturedAt: { type: string, format: date-time }
+        consistency: { const: rest_non_atomic }
+        executionReady: { const: false }
+        assets:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: false
+            required: [asset, walletBalance, unrealizedProfit, availableBalance]
+            properties:
+              asset: { type: string, minLength: 1, maxLength: 20 }
+              walletBalance: { $ref: "#/components/schemas/ExchangeDecimal" }
+              unrealizedProfit: { $ref: "#/components/schemas/ExchangeDecimal" }
+              availableBalance: { $ref: "#/components/schemas/ExchangeDecimal" }
+        positions:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [
+                symbol,
+                positionSide,
+                positionAmt,
+                entryPrice,
+                markPrice,
+                unRealizedProfit,
+                liquidationPrice,
+              ]
+            properties:
+              symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+              positionSide: { enum: [BOTH, LONG, SHORT] }
+              positionAmt: { $ref: "#/components/schemas/ExchangeDecimal" }
+              entryPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
+              markPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
+              unRealizedProfit: { $ref: "#/components/schemas/ExchangeDecimal" }
+              liquidationPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
     Decimal:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,12})?$'
