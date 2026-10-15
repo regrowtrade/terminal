@@ -2,11 +2,9 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"regrow/engine/internal/planner"
@@ -17,7 +15,12 @@ func Handler(token string) http.Handler {
 }
 
 func HandlerWithReadiness(token string, check func(context.Context) error) http.Handler {
+	return HandlerWithSessions(token, check, nil)
+}
+
+func HandlerWithSessions(token string, check func(context.Context) error, sessions SessionStore) http.Handler {
 	mux := http.NewServeMux()
+	registerSessions(mux, token, sessions)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "version": "0.1.0"})
 	})
@@ -35,7 +38,7 @@ func HandlerWithReadiness(token string, check func(context.Context) error) http.
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "database": databaseStatus})
 	})
 	mux.HandleFunc("POST /v1/plans/preview", func(w http.ResponseWriter, r *http.Request) {
-		if len(token) < 32 || strings.HasPrefix(token, "replace-with-") || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+		if !authorized(r, token) {
 			respond(w, 401, map[string]string{"error": "No autorizado"})
 			return
 		}

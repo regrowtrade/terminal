@@ -5,7 +5,7 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/login/);
   await page
     .getByLabel("Contraseña de acceso")
-    .fill("e2e-only-private-password-never-deploy");
+    .fill(process.env.REGROW_E2E_PASSWORD!);
   await page.getByRole("button", { name: "Entrar a mi terminal" }).click();
   await expect(
     page.getByRole("heading", { name: "Tu operativa, en perspectiva." }),
@@ -77,6 +77,7 @@ test("risk is recalculated at a recovered hedge snapshot", async ({ page }) => {
 
 test("position filters work and logout removes access", async ({ page }) => {
   await login(page);
+  const copiedCookies = await page.context().cookies();
   await page.getByRole("link", { name: "Posiciones", exact: true }).click();
   await page.getByRole("textbox", { name: "Buscar activo" }).fill("missing");
   await expect(page.getByRole("status")).toHaveText(
@@ -84,6 +85,30 @@ test("position filters work and logout removes access", async ({ page }) => {
   );
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await expect(page).toHaveURL(/\/login/);
+  await page.context().addCookies(copiedCookies);
   await page.goto("/strategies");
   await expect(page).toHaveURL(/\/login/);
+});
+
+test("settings can revoke every existing session", async ({
+  page,
+  browser,
+}) => {
+  await login(page);
+  const otherContext = await browser.newContext({
+    baseURL: "http://localhost:3100",
+  });
+  try {
+    const otherPage = await otherContext.newPage();
+    await login(otherPage);
+    await page.goto("/settings");
+    await page
+      .getByRole("button", { name: "Cerrar todas las sesiones", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/login/);
+    await otherPage.goto("/strategies");
+    await expect(otherPage).toHaveURL(/\/login/);
+  } finally {
+    await otherContext.close();
+  }
 });

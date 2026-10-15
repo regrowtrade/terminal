@@ -60,6 +60,7 @@ export default defineRailway((ctx) => {
       SESSION_SECRET: ctx.shared.SESSION_SECRET,
       ENGINE_API_TOKEN: ctx.shared.ENGINE_API_TOKEN,
       ENGINE_URL: "http://${{engine.RAILWAY_PRIVATE_DOMAIN}}:8080",
+      SESSION_BACKEND: "postgres",
     },
   });
   return project("regrow-terminal", { resources: [db, migrator, engine, web] });

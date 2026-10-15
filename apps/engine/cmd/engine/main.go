@@ -56,7 +56,7 @@ func main() {
 	}
 	server := httpapi.NewServer(address, token)
 	if store != nil {
-		server.Handler = httpapi.HandlerWithReadiness(token, store.Ready)
+		server.Handler = httpapi.HandlerWithSessions(token, store.Ready, store)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

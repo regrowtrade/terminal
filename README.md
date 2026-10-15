@@ -4,7 +4,7 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 
 ## Qué funciona
 
-- Acceso personal validado en el servidor; sesiones firmadas de 8 horas, cookies HttpOnly, protección de origen, límites de solicitudes y CSP con nonce.
+- Acceso personal validado en el servidor; sesiones firmadas y revocables de 8 horas (PostgreSQL obligatorio en producción), cookies HttpOnly, protección de origen, límites de solicitudes y CSP con nonce.
 - Interfaz responsive: dashboard, posiciones ilustrativas filtrables, calculadora, riesgo, journal y configuración.
 - Vistas previas calculadas en Go, no resultados financieros inventados en el navegador.
 - Entrada limpia con relación beneficio/riesgo configurable.
@@ -13,7 +13,7 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 - Presupuesto en USDT o porcentaje de una base manual explícita (saldo/equity).
 - Nuevo resultado neto de referencia en cada cálculo: realizado + flotante de ambos lados − comisiones + funding.
 - Cálculo de exposición tras cierres parciales probado unitariamente; el HTTP preview muestra escenarios por nivel completo.
-- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. No guarda todavía datos de las pantallas.
+- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. Identidad personal, sesiones revocables y auditoría de sesiones persistidas; planes y cuentas todavía pendientes.
 - Imágenes web/motor para Railway y definición IaC versionada; no desplegadas desde esta entrega.
 
 ## Qué NO funciona todavía
@@ -34,6 +34,8 @@ npm ci
 ```
 
 El script pide una contraseña de al menos 16 caracteres, genera secretos aleatorios efímeros, inicia el motor y la web y no escribe credenciales a disco. Abre **http://localhost:3000**. Al terminar, detiene el proceso de motor que inició. Los tokens y sesiones de esa ejecución dejan de ser válidos al volver a arrancar.
+
+Desarrollo usa sesiones revocables en memoria (`SESSION_BACKEND=local`), no datos reales. En producción solo se permite `postgres`: aplicar migraciones/grants y configurar motor/base antes de iniciar sesión. Cerrar sesión invalida también una cookie copiada; Configuración permite cerrar todas las sesiones. Rotar contraseña o `SESSION_SECRET` invalida las anteriores. Ver [despliegue y operación](docs/deployment.md).
 
 Si el puerto predeterminado `8080` está ocupado (por ejemplo, por Apache), el script selecciona un puerto libre y configura la web para usarlo, sin detener el otro servicio. Comprueba que el motor de simulación esté listo antes de iniciar la web. Si indicas `-EnginePort`, ese puerto debe estar libre.
 
@@ -87,6 +89,8 @@ npm run test:e2e
 
 Las pruebas E2E inician servicios independientes en los puertos 3100/8081 con credenciales únicamente de prueba. No llaman a exchanges. El informe y las capturas quedan en directorios ignorados por Git.
 
+`test:standalone` verifica producción bloqueada sin base; con `TEST_DATABASE_URL` de un PostgreSQL desechable en loopback prueba login, preview y revocación persistida completa (CI lo configura). Crea y elimina solo su base/rol aleatorios. Nunca usar una base de producción para estas pruebas.
+
 Si la descarga de Chromium no está disponible, puedes usar un Chrome instalado: `$env:PLAYWRIGHT_CHANNEL = 'chrome'` antes de `npm run test:e2e`.
 
 ## Reglas financieras
@@ -98,13 +102,13 @@ Cambiar un campo invalida la vista previa previa. No se persisten planes ni se a
 ## Arquitectura y próximos pasos
 
 ```text
-apps/web       → API privada de preview → apps/engine
+apps/web       → API privada de preview/sesiones → apps/engine → PostgreSQL
 contracts      → OpenAPI del motor
-database       → migraciones futuras
+database       → migraciones administrativas versionadas y grants limitados
 docs           → reglas, decisiones, seguridad
 infra          → imágenes y plantilla de despliegue
 ```
 
-Orden siguiente: identidad multiusuario / PostgreSQL → adaptador Binance solo lectura → reconciliación y filtros → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → Bybit / Telegram.
+Orden siguiente: revisar/desplegar identidad personal y sesiones → credenciales cifradas y adaptador Binance solo lectura → reconciliación y filtros → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → multiusuario / Bybit / Telegram.
 
 No habilitar órdenes reales hasta completar los controles de [docs/security.md](docs/security.md). El despliegue acordado es web + motor + PostgreSQL en Railway: [docs/deployment.md](docs/deployment.md). Railway Hobby tiene pendiente la solución de IP de salida fija antes de trading. Para ramas, PRs revisados por el propietario y tags de versiones aprobadas, ver [docs/version-control.md](docs/version-control.md).

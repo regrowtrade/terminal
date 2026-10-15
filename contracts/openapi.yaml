@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Regrow Simulation Engine
   version: 0.1.0
-  description: Private, stateless planning API. No order execution or exchange connectivity.
+  description: Private planning and personal session API. No order execution or exchange connectivity.
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -50,6 +50,54 @@ paths:
                   status: { const: unavailable }
                   mode: { const: simulation }
                   database: { const: unavailable }
+  /v1/auth/sessions/create:
+    post:
+      operationId: createPersonalSession
+      description: Trusted web server only, AFTER password verification. Owner is resolved from the administrative personal binding, never a client user ID. Stores a credential-bound digest for at most eight hours; maximum 20 live sessions. No raw cookie, password or web secret is accepted.
+      security: [{ engineToken: [] }]
+      requestBody: { $ref: "#/components/requestBodies/SessionDigest" }
+      responses:
+        "200": { $ref: "#/components/responses/SessionIdentity" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/auth/sessions/resolve:
+    post:
+      operationId: resolvePersonalSession
+      description: Checks digest, revocation and expiry against PostgreSQL without caching. No owner can be selected by the caller.
+      security: [{ engineToken: [] }]
+      requestBody: { $ref: "#/components/requestBodies/SessionDigest" }
+      responses:
+        "200": { $ref: "#/components/responses/SessionIdentity" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/auth/sessions/revoke:
+    post:
+      operationId: revokePersonalSession
+      description: Idempotent revocation of this digest only. Subsequent requests using a copied cookie are rejected; requests already authorized can complete.
+      security: [{ engineToken: [] }]
+      requestBody: { $ref: "#/components/requestBodies/SessionDigest" }
+      responses:
+        "200": { $ref: "#/components/responses/SessionRevoked" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/auth/sessions/revoke-all:
+    post:
+      operationId: revokeAllPersonalSessions
+      description: Requires a currently valid session digest. Serializes with creation; revokes all sessions existing at its transaction boundary. A new login after that boundary is allowed.
+      security: [{ engineToken: [] }]
+      requestBody: { $ref: "#/components/requestBodies/SessionDigest" }
+      responses:
+        "200": { $ref: "#/components/responses/SessionRevoked" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/plans/preview:
     post:
       operationId: previewPlan
@@ -71,12 +119,45 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 components:
+  requestBodies:
+    SessionDigest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [tokenHash]
+            properties:
+              tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
   securitySchemes:
     engineToken:
       type: http
       scheme: bearer
       description: Server-to-server only. Never expose to browsers.
   responses:
+    SessionIdentity:
+      description: Personal identity and server-side expiration. Never a cookie or digest.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ownerId, role, expiresAt]
+            properties:
+              ownerId: { type: string, format: uuid }
+              role: { const: owner }
+              expiresAt: { type: string, format: date-time }
+    SessionRevoked:
+      description: Revocation completed; repeated individual revocation is safe.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ok]
+            properties:
+              ok: { const: true }
     Error:
       description: Safe validation or authentication error.
       content:
