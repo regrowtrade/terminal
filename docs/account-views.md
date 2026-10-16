@@ -9,7 +9,7 @@ La ruta privada **Posiciones** abre por defecto **Cuenta Binance · Solo lectura
 3. **Consultar cuenta y órdenes** solo está disponible con el lector externo habilitado y sus prerrequisitos aprobados. Reutiliza la lectura completa del PR #5 y su persistencia obligatoria. No cambia permisos, límites de cuota ni destinos del adaptador.
 4. **Mostrar última lectura guardada** recupera explícitamente PostgreSQL, incluso con lectura externa desactivada. Siempre muestra **LECTURA GUARDADA · NO ACTUAL**, fecha de guardado e intervalo original. No llama a Binance ni confirma la situación actual.
 
-Configuración y Posiciones reutilizan el mismo panel/controlador y las mismas tablas de cuenta. Esta entrega no añade endpoints, migraciones ni dependencia del reporte del PR #6. Si se integra el PR #6, conservar su recuperación de comparaciones al resolver posibles solapamientos del panel, y volver a ejecutar CI.
+Configuración y Posiciones reutilizan el mismo panel/controlador y las mismas tablas de cuenta. El PR #7 se actualizó con `main` tras integrar el PR #6 y conserva **Ver cambios de la última lectura** en ambas vistas. Recuperar esa comparación sigue siendo una acción explícita, histórica y sin contacto con Binance; no requiere habilitar el lector externo. Cambiar cuenta, fuente o iniciar otra consulta elimina también la comparación anterior. No se añaden endpoints ni migraciones distintos de los ya incorporados en `main` por el PR #6.
 
 ## Datos y filtros
 

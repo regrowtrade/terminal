@@ -23,6 +23,9 @@ func (s deniedStore) SaveReadSnapshot(context.Context, string, string, binance.S
 func (s deniedStore) LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error) {
 	return database.StoredSnapshot{}, s.err
 }
+func (s deniedStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
+	return database.StoredComparison{}, s.err
+}
 
 type neverReader struct{ t *testing.T }
 
@@ -54,5 +57,15 @@ func TestHistoricalReadsStillRequireAuthorizationWithoutVault(t *testing.T) {
 	}
 	if _, err := (*Service)(nil).Latest(context.Background(), "forged", "account"); !errors.Is(err, ErrDisabled) {
 		t.Fatal("missing store accepted")
+	}
+	if _, err := s.Comparison(context.Background(), "forged", "account"); !errors.Is(err, database.ErrSessionInvalid) {
+		t.Fatal("comparison bypassed authorization")
+	}
+	if _, err := (*Service)(nil).Comparison(context.Background(), "forged", "account"); !errors.Is(err, ErrDisabled) {
+		t.Fatal("comparison accepted missing store")
+	}
+	s.Store = deniedStore{}
+	if _, err := s.Comparison(context.Background(), "synthetic", "account"); err != nil {
+		t.Fatal("disabled live reader prevented local comparison")
 	}
 }

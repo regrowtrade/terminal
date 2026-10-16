@@ -20,12 +20,13 @@ Infraestructura, sesiones y credenciales/lectura fueron revisadas en los PRs #1�
 - [ ] Despliegue aprobado y comprobado en Railway; backups/restauración verificados.
 - [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
 - [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas y revisadas en el PR #2, consolidadas en `main` con el PR #4 (despliegue pendiente).
-- [x] En `feat/connected-account-views`, sobre `main` con PR #5: Posiciones de cuenta reutiliza lecturas manuales/guardadas autenticadas sin fixtures ni cargas automáticas; filtros locales y paginación explícita. Ejemplos separados y opt-in. Revisión/integración pendientes; no acredita un monitor reconciliado ni validación con claves reales.
+- [x] En el PR #7 (`feat/connected-account-views`), actualizado con `main` tras los PRs #5/#6: Posiciones de cuenta reutiliza lecturas manuales/guardadas y comparaciones autenticadas sin fixtures ni cargas automáticas; filtros locales y paginación explícita. Ejemplos separados y opt-in. Revisión/integración pendientes; no acredita un monitor reconciliado ni validación con claves reales.
 - [ ] Persistencia y consumo de planes propios; métricas de cuenta/ledger conciliados en dashboard/journal.
 - [x] En el PR #3, consolidado en `main` con el PR #4: envelopes cifrados con rotación administrativa y RLS, control de permisos/IP y panel manual de saldos/posiciones Binance USDT. Desactivado por defecto, sin claves reales ni despliegue verificado; no equivale a sincronización continua.
 - [x] En el PR #5 (`feat/binance-market-orders`), integrado en `main`: catálogo/filtros de perpetuos USDT y listas completas de órdenes abiertas normales/algo integrados en la lectura manual. Validación operativa pendiente; no confirma protección ni reconcilia fills.
 - [x] En la misma rama: última lectura completa por cuenta persistida con RLS, protección contra sobrescritura fuera de orden, revalidación de sesión al guardar y recuperación histórica explícita sin contactar al exchange. Migración `0004_read_snapshots.sql`; no aplicada a Railway por el agente.
-- [ ] Eventos privados, reconexión y reconciliación de snapshots/fills; monitor de cuenta sincronizado. La comparación propuesta en el PR #6 y las vistas REST manuales no los sustituyen.
+- [x] En el PR #6 (`feat/binance-observation-comparison`), integrado por el propietario en `main`: comparación decimal durable entre lecturas completas, baseline obtenido dentro de la transacción y reporte acotado guardado junto al snapshot; recuperación manual autenticada. Ausencia no implica fill/cancelación/cierre y la continuidad sigue sin establecerse. Migración 0005; no aplicada por el agente.
+- [ ] Eventos privados, reconexión y reconciliación de snapshots/fills; monitor de cuenta sincronizado. La comparación del PR #6 y las vistas REST manuales no los sustituyen.
 
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
 2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.

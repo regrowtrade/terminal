@@ -99,6 +99,34 @@ func conditionalFields(kind, trigger, activate, rate, working string) bool {
 	}
 	return positive(trigger) && (activate == "" || numeric(activate, true)) && (rate == "" || numeric(rate, true))
 }
+func validOrder(o Order) bool {
+	if !validID(o.ID) || !clientID.MatchString(o.ClientID) || !orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) ||
+		(o.Status != "NEW" && o.Status != "PARTIALLY_FILLED") ||
+		(o.Type != "LIMIT" && o.Type != "MARKET" && !conditional(o.Type)) ||
+		(o.WorkingType != "" && o.WorkingType != "MARK_PRICE" && o.WorkingType != "CONTRACT_PRICE") ||
+		(o.ActivatePrice != "" && !numeric(o.ActivatePrice, true)) || (o.PriceRate != "" && !numeric(o.PriceRate, true)) ||
+		!numeric(o.Quantity, true) || !numeric(o.Executed, true) || !numeric(o.Price, true) || !numeric(o.StopPrice, true) {
+		return false
+	}
+	qty, _ := decimal.NewFromString(o.Quantity)
+	executed, _ := decimal.NewFromString(o.Executed)
+	return !executed.GreaterThan(qty) && (o.Status != "NEW" || executed.IsZero()) &&
+		(o.Status != "PARTIALLY_FILLED" || (executed.IsPositive() && executed.LessThan(qty))) &&
+		(o.ClosePosition || qty.IsPositive()) &&
+		(o.Type != "LIMIT" || positive(o.Price)) &&
+		((o.Type != "STOP" && o.Type != "TAKE_PROFIT") || positive(o.Price)) &&
+		(!conditional(o.Type) || conditionalFields(o.Type, o.StopPrice, o.ActivatePrice, o.PriceRate, o.WorkingType)) &&
+		(!o.ClosePosition || o.Type == "STOP_MARKET" || o.Type == "TAKE_PROFIT_MARKET")
+}
+func validAlgoOrder(o AlgoOrder) bool {
+	return validID(o.ID) && clientID.MatchString(o.ClientID) && orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) &&
+		o.AlgoType == "CONDITIONAL" && o.Status == "NEW" && conditional(o.Type) && numeric(o.Quantity, true) &&
+		numeric(o.Price, true) && numeric(o.TriggerPrice, true) &&
+		conditionalFields(o.Type, o.TriggerPrice, o.ActivatePrice, o.CallbackRate, o.WorkingType) &&
+		(o.ClosePosition || positive(o.Quantity)) &&
+		((o.Type != "STOP" && o.Type != "TAKE_PROFIT") || positive(o.Price)) &&
+		(!o.ClosePosition || o.Type == "STOP_MARKET" || o.Type == "TAKE_PROFIT_MARKET")
+}
 func (c *Client) orders(ctx context.Context, credentials vault.Credentials, now func() int64) ([]Order, []AlgoOrder, error) {
 	var raw []orderResponse
 	if err := c.get(ctx, "/fapi/v1/openOrders", &credentials, now(), &raw); err != nil {
@@ -113,25 +141,11 @@ func (c *Client) orders(ctx context.Context, credentials vault.Credentials, now 
 		o := r.Order
 		o.ID = r.ID.String()
 		key := o.Symbol + ":" + o.ID
-		if !validID(o.ID) || !clientID.MatchString(o.ClientID) || seen[key] || r.ReduceOnly == nil || r.ClosePosition == nil ||
-			!orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) ||
-			(o.Status != "NEW" && o.Status != "PARTIALLY_FILLED") ||
-			(o.Type != "LIMIT" && o.Type != "MARKET" && !conditional(o.Type)) ||
-			(o.WorkingType != "" && o.WorkingType != "MARK_PRICE" && o.WorkingType != "CONTRACT_PRICE") ||
-			(o.ActivatePrice != "" && !numeric(o.ActivatePrice, true)) || (o.PriceRate != "" && !numeric(o.PriceRate, true)) ||
-			!numeric(o.Quantity, true) || !numeric(o.Executed, true) || !numeric(o.Price, true) || !numeric(o.StopPrice, true) {
+		if seen[key] || r.ReduceOnly == nil || r.ClosePosition == nil {
 			return nil, nil, ErrResponse
 		}
 		o.ReduceOnly, o.ClosePosition = *r.ReduceOnly, *r.ClosePosition
-		qty, _ := decimal.NewFromString(o.Quantity)
-		executed, _ := decimal.NewFromString(o.Executed)
-		if executed.GreaterThan(qty) || (o.Status == "NEW" && !executed.IsZero()) ||
-			(o.Status == "PARTIALLY_FILLED" && (!executed.IsPositive() || !executed.LessThan(qty))) ||
-			(!o.ClosePosition && !qty.IsPositive()) ||
-			(o.Type == "LIMIT" && !positive(o.Price)) ||
-			((o.Type == "STOP" || o.Type == "TAKE_PROFIT") && !positive(o.Price)) ||
-			(conditional(o.Type) && !conditionalFields(o.Type, o.StopPrice, o.ActivatePrice, o.PriceRate, o.WorkingType)) ||
-			(o.ClosePosition && o.Type != "STOP_MARKET" && o.Type != "TAKE_PROFIT_MARKET") {
+		if !validOrder(o) {
 			return nil, nil, ErrResponse
 		}
 		seen[key] = true
@@ -150,16 +164,11 @@ func (c *Client) orders(ctx context.Context, credentials vault.Credentials, now 
 		o := r.AlgoOrder
 		o.ID = r.ID.String()
 		key := o.Symbol + ":" + o.ID
-		if !validID(o.ID) || !clientID.MatchString(o.ClientID) || seen[key] || r.ReduceOnly == nil || r.ClosePosition == nil ||
-			!orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) || o.AlgoType != "CONDITIONAL" || o.Status != "NEW" ||
-			!conditional(o.Type) || !numeric(o.Quantity, true) || !numeric(o.Price, true) || !numeric(o.TriggerPrice, true) ||
-			!conditionalFields(o.Type, o.TriggerPrice, o.ActivatePrice, o.CallbackRate, o.WorkingType) {
+		if seen[key] || r.ReduceOnly == nil || r.ClosePosition == nil {
 			return nil, nil, ErrResponse
 		}
 		o.ReduceOnly, o.ClosePosition = *r.ReduceOnly, *r.ClosePosition
-		if (!o.ClosePosition && !positive(o.Quantity)) ||
-			((o.Type == "STOP" || o.Type == "TAKE_PROFIT") && !positive(o.Price)) ||
-			(o.ClosePosition && o.Type != "STOP_MARKET" && o.Type != "TAKE_PROFIT_MARKET") {
+		if !validAlgoOrder(o) {
 			return nil, nil, ErrResponse
 		}
 		seen[key] = true

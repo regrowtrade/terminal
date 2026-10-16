@@ -133,7 +133,7 @@ paths:
   /v1/connections/binance/snapshot:
     post:
       operationId: readBinanceSnapshot
-      description: Opt-in manual USDT account/position, normal/algo open orders and perpetual instrument REST reads after session, ownership, decryption and least-privilege/IP verification. Seven non-atomic requests, no submission/cancellation, streams or retries at application level. Unsupported/incomplete responses fail without returning a partial result. Rechecks session/account and durably replaces the latest observation before success; no automatic fallback on failure. Never use as execution readiness. Requires coordinated web/engine rollout for the expanded strict response.
+      description: Opt-in manual USDT account/position, normal/algo open orders and perpetual instrument REST reads after session, ownership, decryption and least-privilege/IP verification. Seven non-atomic requests, no submission/cancellation, streams or retries at application level. Unsupported/incomplete responses fail without returning a partial result. Rechecks session/account and atomically replaces the latest observation and its bounded comparison against the previous durable baseline before success; no automatic fallback on failure. Never use as execution readiness. Requires coordinated web/engine rollout for the expanded strict response.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -206,6 +206,34 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/comparison:
+    post:
+      operationId: latestBinanceObservationComparison
+      description: Explicit recovery of the latest stored same-account REST observation comparison. Requires a valid session and ownership; no credentials, exchange request, baseline repair or automatic refresh. No terminal order status, fill ledger, continuity or execution readiness is inferred from absence or equality. A legacy NULL report returns 404, not zero changes.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Bounded historical differences, not a reconciled account state.
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/StoredObservationComparison" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   requestBodies:
     SessionDigest:
@@ -257,6 +285,127 @@ components:
             properties:
               error: { type: string }
   schemas:
+    StoredObservationComparison:
+      type: object
+      additionalProperties: false
+      required: [report, storedAt]
+      properties:
+        report: { $ref: "#/components/schemas/ObservationReport" }
+        storedAt: { type: string, format: date-time }
+    ObservationReport:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          mode,
+          status,
+          previousCapturedAt,
+          currentStartedAt,
+          currentCapturedAt,
+          intervalRelation,
+          continuity,
+          executionReady,
+          totalChanges,
+          detailLimit,
+          truncated,
+          changes,
+        ]
+      description: Same-account complete normalized observations only; current capture must be later than the previous one. Initial observations have no baseline or changes. Decimal-scale-only and updateTime-only differences are ignored. Full record-change count is computed even when deterministic details are truncated to 200 records. Disjoint intervals do not establish stream continuity.
+      properties:
+        schemaVersion: { const: 1 }
+        mode: { const: rest_observation_comparison }
+        status: { enum: [initial_observation, compared] }
+        previousCapturedAt: { type: [string, "null"], format: date-time }
+        currentStartedAt: { type: string, format: date-time }
+        currentCapturedAt: { type: string, format: date-time }
+        intervalRelation: { enum: [no_baseline, disjoint, overlapping] }
+        continuity: { const: not_established }
+        executionReady: { const: false }
+        totalChanges: { type: integer, minimum: 0, maximum: 82000 }
+        detailLimit: { const: 200 }
+        truncated: { type: boolean }
+        changes:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ObservationChange" }
+    ObservationChange:
+      type: object
+      additionalProperties: false
+      required: [entity, key, kind, fields]
+      properties:
+        entity: { enum: [asset, position, order, algo, instrument] }
+        key:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: Asset name, symbol/position-side, symbol/int64-string-ID or instrument symbol. Order and algo identities remain separate, even with the same ID.
+        kind: { enum: [observed, not_observed, changed] }
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/ObservationFieldChange" }
+    ObservationFieldChange:
+      type: object
+      additionalProperties: false
+      required: [field, before, after]
+      description: Null means not observed, never an invented zero or terminal state. Numeric fields retain original decimal strings and are compared using exact decimals. Observed records have null before values; not_observed records have null after values.
+      properties:
+        field:
+          enum:
+            [
+              walletBalance,
+              unrealizedProfit,
+              availableBalance,
+              positionAmt,
+              entryPrice,
+              markPrice,
+              unRealizedProfit,
+              liquidationPrice,
+              origQty,
+              executedQty,
+              price,
+              stopPrice,
+              activatePrice,
+              priceRate,
+              quantity,
+              triggerPrice,
+              callbackRate,
+              priceFilter.min,
+              priceFilter.max,
+              priceFilter.step,
+              lotSize.min,
+              lotSize.max,
+              lotSize.step,
+              marketLotSize.min,
+              marketLotSize.max,
+              marketLotSize.step,
+              minNotional,
+              multiplierUp,
+              multiplierDown,
+              clientOrderId,
+              clientAlgoId,
+              side,
+              positionSide,
+              type,
+              status,
+              reduceOnly,
+              closePosition,
+              workingType,
+              algoType,
+              orderType,
+              algoStatus,
+              contractType,
+              baseAsset,
+              quoteAsset,
+              marginAsset,
+              maxNumOrders,
+              maxNumAlgoOrders,
+              unrecognizedFilterTypes,
+            ]
+        before: { type: [string, "null"], maxLength: 4096 }
+        after: { type: [string, "null"], maxLength: 4096 }
     ExchangeDecimal:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'

@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { BinanceAccountData } from "./binance-account-data";
+import { ObservationComparison } from "./observation-comparison";
+import {
+  storedComparisonSchema,
+  type StoredComparison,
+} from "@/lib/observation-schema";
 import {
   connectionStateSchema,
   snapshotSchema,
@@ -30,6 +35,7 @@ export function BinanceConnection() {
   const [storedAt, setStoredAt] = useState<string | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
   useEffect(() => () => activeRequest.current?.abort(), []);
+  const [comparison, setComparison] = useState<StoredComparison | null>(null);
   useEffect(() => {
     if (!snapshot) return;
     const tick = () =>
@@ -38,7 +44,9 @@ export function BinanceConnection() {
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [snapshot, receivedAt]);
-  async function load(operation: "list" | "snapshot" | "latest") {
+  async function load(
+    operation: "list" | "snapshot" | "latest" | "comparison",
+  ) {
     if (
       !hydrated ||
       activeRequest.current ||
@@ -57,6 +65,7 @@ export function BinanceConnection() {
     setError("");
     setSnapshot(null);
     setStoredAt(null);
+    setComparison(null);
     if (operation === "list") {
       setState(null);
       setSelected("");
@@ -94,6 +103,8 @@ export function BinanceConnection() {
         const next = connectionStateSchema.parse(body);
         setState(next);
         setSelected(next.accounts[0]?.id ?? "");
+      } else if (operation === "comparison") {
+        setComparison(storedComparisonSchema.parse(body));
       } else if (operation === "latest") {
         const stored = storedSnapshotSchema.parse(body);
         setSnapshot(stored.snapshot);
@@ -161,6 +172,7 @@ export function BinanceConnection() {
               setSelected(e.target.value);
               setSnapshot(null);
               setStoredAt(null);
+              setComparison(null);
               setError("");
             }}
             disabled={busy}
@@ -186,6 +198,14 @@ export function BinanceConnection() {
             onClick={() => void load("latest")}
           >
             Mostrar última lectura guardada
+          </button>
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busy || !selected}
+            onClick={() => void load("comparison")}
+          >
+            Ver cambios de la última lectura
           </button>
         </div>
       )}
@@ -232,6 +252,7 @@ export function BinanceConnection() {
           />
         </section>
       )}
+      {comparison && <ObservationComparison comparison={comparison} />}
     </div>
   );
 }

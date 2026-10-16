@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PositionsWorkspace } from "@/components/positions-workspace";
 import { BinanceAccountData } from "@/components/binance-account-data";
 import { syntheticAccountSnapshot } from "./fixtures/binance";
+import { syntheticComparison } from "./fixtures/comparison";
 
 afterEach(() => vi.unstubAllGlobals());
 const accounts = [
@@ -167,6 +168,74 @@ it("keeps simulation opt-in and erases account data when changing source", async
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Cuenta de lectura")).not.toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("preserves historical comparisons alongside account filters and clears both on source/account changes", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ enabled: false, accounts }))
+    .mockResolvedValueOnce(Response.json(syntheticComparison()))
+    .mockResolvedValueOnce(
+      Response.json({
+        snapshot: syntheticAccountSnapshot(),
+        storedAt: "2020-01-01T00:00:02Z",
+      }),
+    )
+    .mockResolvedValueOnce(Response.json(syntheticComparison()));
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  render(<PositionsWorkspace />);
+  await list(user);
+  const compare = screen.getByRole("button", {
+    name: "Ver cambios de la última lectura",
+  });
+  expect(compare).toBeEnabled();
+  await user.click(compare);
+  expect(
+    await screen.findByText("COMPARACIÓN GUARDADA · NO ESTADO ACTUAL"),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("table", { name: /Posiciones USDT/ }),
+  ).not.toBeInTheDocument();
+  await user.selectOptions(
+    screen.getByLabelText("Cuenta de lectura"),
+    accounts[1].id,
+  );
+  expect(
+    screen.queryByRole("region", { name: "Comparación guardada de Binance" }),
+  ).not.toBeInTheDocument();
+  await user.click(
+    screen.getByRole("button", { name: "Mostrar última lectura guardada" }),
+  );
+  await user.selectOptions(
+    await screen.findByLabelText("Lado de posición"),
+    "SHORT",
+  );
+  expect(
+    screen.getByRole("cell", { name: "-2.000000000000000001" }),
+  ).toBeVisible();
+  await user.click(compare);
+  expect(
+    await screen.findByText("COMPARACIÓN GUARDADA · NO ESTADO ACTUAL"),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("table", { name: /Posiciones USDT/ }),
+  ).not.toBeInTheDocument();
+  expect(fetch.mock.calls[3][0]).toBe("/api/connections/binance/comparison");
+  expect(fetch.mock.calls[3][1].body).toBe(
+    JSON.stringify({ accountId: accounts[1].id }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Ejemplos de simulación" }),
+  );
+  expect(
+    screen.queryByRole("region", { name: "Comparación guardada de Binance" }),
+  ).not.toBeInTheDocument();
+  await user.click(
+    screen.getByRole("button", { name: "Cuenta Binance · Solo lectura" }),
+  );
+  expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledTimes(4);
 });
 
 it("clears all financial data on account change, failed refresh or an invalid complete response, without examples fallback", async () => {

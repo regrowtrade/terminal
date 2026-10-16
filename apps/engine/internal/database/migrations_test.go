@@ -20,7 +20,7 @@ func TestLoadLegacyFoundation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 4 || migrations[0].Name != "0001_foundation.sql" || len(migrations[0].Checksum) != 64 {
+	if len(migrations) != 5 || migrations[0].Name != "0001_foundation.sql" || len(migrations[0].Checksum) != 64 {
 		t.Fatal("unexpected migration manifest")
 	}
 	if strings.HasPrefix(migrations[0].SQL, "BEGIN;") || strings.HasSuffix(migrations[0].SQL, "COMMIT;") {

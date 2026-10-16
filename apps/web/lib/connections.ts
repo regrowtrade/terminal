@@ -9,10 +9,17 @@ import {
   storedSnapshotSchema,
 } from "./connections-schema";
 import { boundedText } from "./request";
+import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
 import { sessionBackend, sessionDigest } from "./sessions";
 
 const limiter = new AttemptLimiter(12, 60_000);
+const responseSchemas = {
+  list: connectionStateSchema,
+  snapshot: snapshotSchema,
+  latest: storedSnapshotSchema,
+  comparison: storedComparisonSchema,
+};
 function json(body: unknown, status: number) {
   return Response.json(body, {
     status,
@@ -21,7 +28,7 @@ function json(body: unknown, status: number) {
 }
 export async function connectionRequest(
   request: Request,
-  operation: "list" | "snapshot" | "latest",
+  operation: "list" | "snapshot" | "latest" | "comparison",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -80,7 +87,9 @@ export async function connectionRequest(
         404:
           operation === "latest"
             ? "Cuenta o lectura guardada no disponible."
-            : "Cuenta no disponible.",
+            : operation === "comparison"
+              ? "Cuenta o comparación guardada no disponible."
+              : "Cuenta no disponible.",
         422: "La clave no cumple los permisos de lectura e IP requeridos. Revisa los permisos en Binance; no actives trading.",
         429: "Binance limitó temporalmente las consultas. Espera antes de actualizar.",
         503: "Lectura no disponible. Revisa PostgreSQL, cifrado y habilitación del motor; no se enviaron órdenes.",
@@ -91,15 +100,7 @@ export async function connectionRequest(
     const body: unknown = JSON.parse(
       await boundedText(response, 8 * 1024 * 1024),
     );
-    return json(
-      (operation === "list"
-        ? connectionStateSchema
-        : operation === "latest"
-          ? storedSnapshotSchema
-          : snapshotSchema
-      ).parse(body),
-      200,
-    );
+    return json(responseSchemas[operation].parse(body), 200);
   } catch {
     return json(
       {

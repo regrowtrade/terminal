@@ -3,6 +3,7 @@ import {
   syntheticSnapshot,
   syntheticAccountSnapshot,
 } from "../tests/fixtures/binance";
+import { syntheticComparison } from "../tests/fixtures/comparison";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -24,7 +25,7 @@ test("requires login and protects the preview API", async ({
   await expect(page).toHaveURL(/\/login/);
   const response = await request.post("/api/plans/preview", { data: {} });
   expect(response.status()).toBe(401);
-  for (const operation of ["list", "snapshot", "latest"]) {
+  for (const operation of ["list", "snapshot", "latest", "comparison"]) {
     const reading = await request.post(
       `/api/connections/binance/${operation}`,
       { data: { accountId: "00000000-0000-4000-8000-000000000001" } },
@@ -342,4 +343,80 @@ test("account positions remain separate from examples and preserve historical pr
     page.getByLabel("Cuenta de lectura", { exact: true }),
   ).toHaveCount(0);
   expect(requests).toEqual(["list", "latest"]);
+});
+
+test("synthetic comparison preserves exact values and unknown missing-order state", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/connections/binance/list", (route) =>
+    route.fulfill({
+      json: {
+        enabled: false,
+        accounts: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Synthetic one",
+            exchange: "binance",
+            environment: "production",
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000002",
+            name: "Synthetic two",
+            exchange: "binance",
+            environment: "production",
+          },
+        ],
+      },
+    }),
+  );
+  let requests = 0;
+  await page.route("**/api/connections/binance/comparison", (route) => {
+    requests++;
+    return requests === 1
+      ? route.fulfill({ json: syntheticComparison() })
+      : route.fulfill({
+          status: 503,
+          json: { error: "Comparación sintética no disponible." },
+        });
+  });
+  await page.goto("/settings");
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Ver cambios de la última lectura",
+      exact: true,
+    })
+    .click();
+  const region = page.getByRole("region", {
+    name: "Comparación guardada de Binance",
+  });
+  await expect(region.getByRole("status")).toHaveText(
+    "COMPARACIÓN GUARDADA · NO ESTADO ACTUAL",
+  );
+  await expect(
+    region.getByRole("cell", { name: "1.000000000000000001", exact: true }),
+  ).toBeVisible();
+  await expect(region.getByText(/estado final desconocido/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByLabel("Cuenta de lectura")
+    .selectOption("00000000-0000-4000-8000-000000000002");
+  await expect(region).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: "Ver cambios de la última lectura",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Comparación sintética" }),
+  ).toBeVisible();
+  await expect(region).toHaveCount(0);
 });

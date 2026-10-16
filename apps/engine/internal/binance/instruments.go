@@ -52,6 +52,28 @@ func validRange(r RangeFilter) bool {
 	// A zero filter component can mean disabled; do not substitute precision.
 	return max.IsZero() || max.GreaterThanOrEqual(min)
 }
+func validInstrument(i Instrument) bool {
+	if !instrument.MatchString(i.Symbol) || i.ContractType != "PERPETUAL" || !exchangeToken.MatchString(i.Status) ||
+		!exchangeToken.MatchString(i.BaseAsset) || i.QuoteAsset != "USDT" || i.MarginAsset != "USDT" ||
+		!validRange(i.Price) || !validRange(i.Lot) || !validRange(i.MarketLot) || !numeric(i.MinNotional, true) ||
+		!positive(i.MultiplierUp) || !positive(i.MultiplierDown) || i.MaxOrders < 0 || i.MaxOrders > 9007199254740991 ||
+		i.MaxAlgos < 0 || i.MaxAlgos > 9007199254740991 || i.UnknownFilters == nil || len(i.UnknownFilters) > 64 {
+		return false
+	}
+	up, _ := decimal.NewFromString(i.MultiplierUp)
+	down, _ := decimal.NewFromString(i.MultiplierDown)
+	if up.LessThan(down) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, f := range i.UnknownFilters {
+		if !exchangeToken.MatchString(f) || seen[f] {
+			return false
+		}
+		seen[f] = true
+	}
+	return true
+}
 func parseInstrument(raw instrumentResponse) (Instrument, error) {
 	i := Instrument{Symbol: raw.Symbol, ContractType: raw.ContractType, Status: raw.Status, BaseAsset: raw.BaseAsset, QuoteAsset: raw.QuoteAsset, MarginAsset: raw.MarginAsset, UnknownFilters: []string{}}
 	if !instrument.MatchString(i.Symbol) || i.ContractType != "PERPETUAL" || !exchangeToken.MatchString(i.Status) ||
@@ -107,12 +129,7 @@ func parseInstrument(raw instrumentResponse) (Instrument, error) {
 			return Instrument{}, ErrResponse
 		}
 	}
-	if !validRange(i.Price) || !validRange(i.Lot) || !validRange(i.MarketLot) || !numeric(i.MinNotional, true) || !positive(i.MultiplierUp) || !positive(i.MultiplierDown) {
-		return Instrument{}, ErrResponse
-	}
-	up, _ := decimal.NewFromString(i.MultiplierUp)
-	down, _ := decimal.NewFromString(i.MultiplierDown)
-	if up.LessThan(down) {
+	if !validInstrument(i) {
 		return Instrument{}, ErrResponse
 	}
 	sort.Strings(i.UnknownFilters)

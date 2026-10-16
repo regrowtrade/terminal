@@ -14,8 +14,8 @@ El destino único es `terminal/`. `../src/rebuymaster`, `../src/hedge-management
 - Web Next.js y motor Go con aritmética decimal y contrato privado.
 - Identidad validada en servidor, sesiones revocables, RLS y credenciales cifradas, sin aceptar userId como autoridad del navegador.
 - Lectura Binance USDT manual de cuentas, posiciones, órdenes normales/algo e instrumentos y última observación persistida, incorporadas en `main` con los PRs #4/#5. Sin validación operativa con una cuenta real por el agente.
-- Comparación durable entre observaciones propuesta por separado en el PR #6: no reemplaza eventos ni reconciliación.
-- En `feat/connected-account-views`: ruta Posiciones de cuenta sin fixtures, con ejemplos opt-in, filtros locales y paginación. Revisión/integración pendientes. No requiere el PR #6.
+- Comparación durable entre observaciones incorporada en `main` con el PR #6: no reemplaza eventos ni reconciliación.
+- En el PR #7 (`feat/connected-account-views`), actualizado con `main` después del PR #6: ruta Posiciones de cuenta sin fixtures, con ejemplos opt-in, filtros locales y paginación; conserva la recuperación explícita de comparaciones históricas. Revisión/integración pendientes.
 
 ## Orden y puertas del plan
 
