@@ -19,6 +19,7 @@ type Store interface {
 	ReadAccountCredential(context.Context, string, string) (vault.Binding, vault.Envelope, error)
 	SaveReadSnapshot(context.Context, string, string, binance.Snapshot) error
 	LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error)
+	LatestReadComparison(context.Context, string, string) (database.StoredComparison, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -65,4 +66,11 @@ func (s *Service) Latest(ctx context.Context, hash, account string) (database.St
 		return database.StoredSnapshot{}, ErrDisabled
 	}
 	return s.Store.LatestReadSnapshot(ctx, hash, account)
+}
+
+func (s *Service) Comparison(ctx context.Context, hash, account string) (database.StoredComparison, error) {
+	if s == nil || s.Store == nil {
+		return database.StoredComparison{}, ErrDisabled
+	}
+	return s.Store.LatestReadComparison(ctx, hash, account)
 }

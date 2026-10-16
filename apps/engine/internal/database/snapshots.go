@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"regrow/engine/internal/binance"
+	"regrow/engine/internal/observations"
 )
 
 var ErrSnapshotMissing = errors.New("no hay una lectura guardada para esta cuenta")
@@ -21,13 +22,9 @@ type StoredSnapshot struct {
 }
 
 // The only writer is the internal read adapter, never a browser-provided JSON
-// payload. Validate complete observation metadata again at the durable boundary.
+// payload. Validate normalized financial data again at the durable boundary.
 func completeSnapshot(s binance.Snapshot) bool {
-	return s.Source == "binance-production" && s.Mode == "read_only" && s.Consistency == "rest_non_atomic" && !s.ExecutionReady &&
-		!s.StartedAt.IsZero() && !s.CapturedAt.Before(s.StartedAt) && s.CapturedAt.Sub(s.StartedAt) <= 30*time.Second &&
-		s.Assets != nil && len(s.Assets) <= 1000 && s.Positions != nil && len(s.Positions) <= 10000 &&
-		s.OpenOrders != nil && len(s.OpenOrders) <= 10000 && s.AlgoOrders != nil && len(s.AlgoOrders) <= 10000 &&
-		len(s.Instruments) > 0 && len(s.Instruments) <= 10000
+	return binance.ValidateSnapshot(s) == nil
 }
 
 func (s *Store) SaveReadSnapshot(ctx context.Context, hash, account string, snapshot binance.Snapshot) error {
@@ -55,10 +52,34 @@ func (s *Store) SaveReadSnapshot(ctx context.Context, hash, account string, snap
 		if !exists {
 			return ErrAccountMissing
 		}
-		result, err := tx.ExecContext(ctx, `INSERT INTO exchange_read_snapshots(account_id,owner_id,started_at,captured_at,snapshot)
-			VALUES($1,$2,$3,$4,$5) ON CONFLICT(account_id) DO UPDATE
-			SET started_at=EXCLUDED.started_at,captured_at=EXCLUDED.captured_at,snapshot=EXCLUDED.snapshot,stored_at=clock_timestamp()
-			WHERE exchange_read_snapshots.owner_id=EXCLUDED.owner_id AND exchange_read_snapshots.captured_at<EXCLUDED.captured_at`, account, owner, snapshot.StartedAt, snapshot.CapturedAt, data)
+		// withSession serializes this owner's transactions. Read the previous
+		// durable baseline here, not before network access, and replace both
+		// observation and comparison together. No exchange calls under this lock.
+		var prior []byte
+		err := tx.QueryRowContext(ctx, `SELECT snapshot FROM exchange_read_snapshots WHERE account_id=$1 FOR UPDATE`, account).Scan(&prior)
+		var baseline *binance.Snapshot
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			previous, err := decodeReadSnapshot(prior)
+			if err != nil {
+				return err
+			}
+			baseline = &previous
+		}
+		report, err := observations.Compare(baseline, snapshot)
+		if err != nil {
+			return ErrSnapshotInvalid
+		}
+		comparison, err := json.Marshal(report)
+		if err != nil || len(comparison) > 2*1024*1024 {
+			return ErrSnapshotInvalid
+		}
+		result, err := tx.ExecContext(ctx, `INSERT INTO exchange_read_snapshots(account_id,owner_id,started_at,captured_at,snapshot,comparison)
+			VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(account_id) DO UPDATE
+			SET started_at=EXCLUDED.started_at,captured_at=EXCLUDED.captured_at,snapshot=EXCLUDED.snapshot,comparison=EXCLUDED.comparison,stored_at=clock_timestamp()
+			WHERE exchange_read_snapshots.owner_id=EXCLUDED.owner_id AND exchange_read_snapshots.captured_at<EXCLUDED.captured_at`, account, owner, snapshot.StartedAt, snapshot.CapturedAt, data, comparison)
 		if err != nil {
 			return err
 		}
@@ -94,18 +115,25 @@ func (s *Store) LatestReadSnapshot(ctx context.Context, hash, account string) (S
 			}
 			return err
 		}
-		if len(data) > 8*1024*1024 {
-			return ErrSnapshotInvalid
-		}
-		d := json.NewDecoder(bytes.NewReader(data))
-		d.DisallowUnknownFields()
-		if d.Decode(&result.Snapshot) != nil || d.Decode(&struct{}{}) != io.EOF || !completeSnapshot(result.Snapshot) {
-			return ErrSnapshotInvalid
-		}
-		return nil
+		var err error
+		result.Snapshot, err = decodeReadSnapshot(data)
+		return err
 	})
 	if err != nil {
 		return StoredSnapshot{}, err
 	}
 	return result, nil
+}
+
+func decodeReadSnapshot(data []byte) (binance.Snapshot, error) {
+	var snapshot binance.Snapshot
+	if len(data) > 8*1024*1024 {
+		return snapshot, ErrSnapshotInvalid
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if d.Decode(&snapshot) != nil || d.Decode(&struct{}{}) != io.EOF || !completeSnapshot(snapshot) {
+		return binance.Snapshot{}, ErrSnapshotInvalid
+	}
+	return snapshot, nil
 }

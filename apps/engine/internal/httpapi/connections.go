@@ -17,10 +17,11 @@ type ConnectionService interface {
 	State(context.Context, string) (connections.State, error)
 	Snapshot(context.Context, string, string) (binance.Snapshot, error)
 	Latest(context.Context, string, string) (database.StoredSnapshot, error)
+	Comparison(context.Context, string, string) (database.StoredComparison, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {
-	for _, operation := range []string{"list", "snapshot", "latest"} {
+	for _, operation := range []string{"list", "snapshot", "latest", "comparison"} {
 		mux.HandleFunc("POST /v1/connections/binance/"+operation, func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r, token) {
 				respond(w, 401, map[string]string{"error": "No autorizado"})
@@ -54,6 +55,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				data, err = service.State(ctx, input.TokenHash)
 			} else if operation == "latest" {
 				data, err = service.Latest(ctx, input.TokenHash, input.AccountID)
+			} else if operation == "comparison" {
+				data, err = service.Comparison(ctx, input.TokenHash, input.AccountID)
 			} else {
 				data, err = service.Snapshot(ctx, input.TokenHash, input.AccountID)
 			}
@@ -64,6 +67,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				respond(w, 404, map[string]string{"error": "Cuenta no disponible"})
 			case errors.Is(err, database.ErrSnapshotMissing):
 				respond(w, 404, map[string]string{"error": database.ErrSnapshotMissing.Error()})
+			case errors.Is(err, database.ErrComparisonMissing):
+				respond(w, 404, map[string]string{"error": database.ErrComparisonMissing.Error()})
 			case errors.Is(err, binance.ErrPermissions):
 				respond(w, 422, map[string]string{"error": binance.ErrPermissions.Error()})
 			case errors.Is(err, binance.ErrRateLimited):

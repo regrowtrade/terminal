@@ -17,6 +17,7 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 - Imágenes web/motor para Railway y definición IaC versionada; no desplegadas desde esta entrega.
 - Credenciales cifradas por envolvente y CLI administrativo con entrada oculta; panel manual de saldos/posiciones, órdenes abiertas normales/condicionales y catálogo/filtros de perpetuos Binance USDT en Configuración, solo lectura y desactivado por defecto. IDs int64 como texto, precios/cantidades decimales e intervalo de observación explícito. [Habilitación, permisos y límites](docs/binance-readonly.md).
 - Guardado de la última lectura completa por cuenta con RLS y revalidación de sesión tras la consulta; recuperación manual desde PostgreSQL marcada como **guardada, no actual**, incluso con el lector externo desactivado. No es un historial de fills ni un checkpoint de reconciliación.
+- Comparación durable entre la última lectura completa y la anterior, guardada en la misma transacción: diferencias decimales de saldos, posiciones, órdenes y filtros; ausencia como «no observado», nunca fill/cancelación/cierre inferido. Detalle limitado explícitamente a 200 registros con conteo completo. No establece continuidad ni habilita ejecución.
 
 ## Qué NO funciona todavía
 

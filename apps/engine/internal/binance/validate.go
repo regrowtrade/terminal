@@ -4,6 +4,7 @@ import (
 	"github.com/shopspring/decimal"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var decimalText = regexp.MustCompile(`^-?(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$`)
@@ -14,7 +15,50 @@ func numeric(value string, nonnegative bool) bool {
 		return false
 	}
 	d, err := decimal.NewFromString(value)
-	return err == nil && (!nonnegative || !d.IsNegative())
+	return err == nil && (!nonnegative || (!d.IsNegative() && !strings.HasPrefix(value, "-")))
+}
+
+// ValidateSnapshot applies the same normalized-data rules to fresh and durable
+// observations before comparison. It does not validate execution or protection.
+func ValidateSnapshot(s Snapshot) error {
+	if s.Source != "binance-production" || s.Mode != "read_only" || s.Consistency != "rest_non_atomic" || s.ExecutionReady ||
+		s.StartedAt.IsZero() || s.CapturedAt.Before(s.StartedAt) || s.CapturedAt.Sub(s.StartedAt) > 30*time.Second ||
+		s.OpenOrders == nil || len(s.OpenOrders) > 10000 || s.AlgoOrders == nil || len(s.AlgoOrders) > 10000 ||
+		len(s.Instruments) == 0 || len(s.Instruments) > 10000 {
+		return ErrResponse
+	}
+	if err := validate(s.Assets, s.Positions); err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, i := range s.Instruments {
+		if !validInstrument(i) || known[i.Symbol] {
+			return ErrResponse
+		}
+		known[i.Symbol] = true
+	}
+	for _, p := range s.Positions {
+		if !known[p.Symbol] {
+			return ErrResponse
+		}
+	}
+	seen := map[string]bool{}
+	for _, o := range s.OpenOrders {
+		key := o.Symbol + ":" + o.ID
+		if !validOrder(o) || !known[o.Symbol] || seen[key] {
+			return ErrResponse
+		}
+		seen[key] = true
+	}
+	seen = map[string]bool{}
+	for _, o := range s.AlgoOrders {
+		key := o.Symbol + ":" + o.ID
+		if !validAlgoOrder(o) || !known[o.Symbol] || seen[key] {
+			return ErrResponse
+		}
+		seen[key] = true
+	}
+	return nil
 }
 func validate(assets []Asset, positions []Position) error {
 	if assets == nil || positions == nil || len(assets) > 1000 || len(positions) > 10000 {
