@@ -2,21 +2,50 @@
 
 import { useState } from "react";
 import type { AccountSnapshot } from "@/lib/connections-schema";
+import {
+  allAccountRecords,
+  matchesAccountFilter,
+  type AccountFilter,
+} from "@/lib/account-filter";
+import { ReadPagination, readPageSize } from "./read-pagination";
 
-export function BinanceMarketData({ snapshot }: { snapshot: AccountSnapshot }) {
+export function BinanceMarketData({
+  snapshot,
+  filter = allAccountRecords,
+}: {
+  snapshot: AccountSnapshot;
+  filter?: AccountFilter;
+}) {
   const [symbol, setSymbol] = useState(
     snapshot.positions[0]?.symbol ?? snapshot.instruments[0].symbol,
   );
   const instrument =
     snapshot.instruments.find((i) => i.symbol === symbol) ??
     snapshot.instruments[0];
+  const [orderPage, setOrderPage] = useState(0);
+  const [algoPage, setAlgoPage] = useState(0);
+  const orders = snapshot.openOrders.filter((o) =>
+    matchesAccountFilter(o, filter),
+  );
+  const algos = snapshot.algoOrders.filter((o) =>
+    matchesAccountFilter(o, filter),
+  );
+  const currentOrderPage = Math.min(
+    orderPage,
+    Math.max(0, Math.ceil(orders.length / readPageSize) - 1),
+  );
+  const currentAlgoPage = Math.min(
+    algoPage,
+    Math.max(0, Math.ceil(algos.length / readPageSize) - 1),
+  );
   return (
     <>
       <div className="table-scroll">
         <table>
           <caption>
-            Órdenes abiertas normales ({snapshot.openOrders.length}) · No son
-            fills confirmados
+            Órdenes abiertas normales ({orders.length} de{" "}
+            {snapshot.openOrders.length} registros de la lectura coinciden) · No
+            son fills confirmados
           </caption>
           <thead>
             <tr>
@@ -29,44 +58,62 @@ export function BinanceMarketData({ snapshot }: { snapshot: AccountSnapshot }) {
             </tr>
           </thead>
           <tbody>
-            {snapshot.openOrders.map((o) => (
-              <tr key={`${o.symbol}:${o.orderId}`}>
-                <td>
-                  {o.orderId}
-                  <br />
-                  {o.symbol}
-                </td>
-                <td>
-                  {o.side} / {o.positionSide}
-                </td>
-                <td>
-                  {o.type} / {o.status}
-                </td>
-                <td>
-                  {o.origQty} / {o.executedQty}
-                </td>
-                <td>
-                  {o.price} /{" "}
-                  {o.type === "TRAILING_STOP_MARKET"
-                    ? `Activación ${o.activatePrice} · Callback ${o.priceRate}%`
-                    : o.stopPrice}
-                </td>
-                <td>
-                  Reduce-only: {o.reduceOnly ? "sí" : "no"} · Cierre total:{" "}
-                  {o.closePosition ? "sí" : "no"}
-                </td>
-              </tr>
-            ))}
+            {orders
+              .slice(
+                currentOrderPage * readPageSize,
+                (currentOrderPage + 1) * readPageSize,
+              )
+              .map((o) => (
+                <tr key={`${o.symbol}:${o.orderId}`}>
+                  <td>
+                    {o.orderId}
+                    <br />
+                    {o.symbol}
+                  </td>
+                  <td>
+                    {o.side} / {o.positionSide}
+                  </td>
+                  <td>
+                    {o.type} / {o.status}
+                  </td>
+                  <td>
+                    {o.origQty} / {o.executedQty}
+                  </td>
+                  <td>
+                    {o.price} /{" "}
+                    {o.type === "TRAILING_STOP_MARKET"
+                      ? `Activación ${o.activatePrice} · Callback ${o.priceRate}%`
+                      : o.stopPrice}
+                  </td>
+                  <td>
+                    Reduce-only: {o.reduceOnly ? "sí" : "no"} · Cierre total:{" "}
+                    {o.closePosition ? "sí" : "no"}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
+      <ReadPagination
+        label="órdenes normales"
+        total={orders.length}
+        page={currentOrderPage}
+        onPageChange={setOrderPage}
+      />
       {snapshot.openOrders.length === 0 && (
         <p>No se devolvieron órdenes normales abiertas en esta consulta.</p>
+      )}
+      {snapshot.openOrders.length > 0 && orders.length === 0 && (
+        <p>
+          No hay órdenes normales que coincidan con los filtros; la lectura sí
+          contiene otras órdenes.
+        </p>
       )}
       <div className="table-scroll">
         <table>
           <caption>
-            Órdenes condicionales / algo ({snapshot.algoOrders.length}) ·
+            Órdenes condicionales / algo ({algos.length} de{" "}
+            {snapshot.algoOrders.length} registros de la lectura coinciden) ·
             Protección no verificada
           </caption>
           <thead>
@@ -80,44 +127,61 @@ export function BinanceMarketData({ snapshot }: { snapshot: AccountSnapshot }) {
             </tr>
           </thead>
           <tbody>
-            {snapshot.algoOrders.map((o) => (
-              <tr key={`${o.symbol}:${o.algoId}`}>
-                <td>
-                  {o.algoId}
-                  <br />
-                  {o.symbol}
-                </td>
-                <td>
-                  {o.side} / {o.positionSide}
-                </td>
-                <td>
-                  {o.orderType} / {o.algoStatus}
-                </td>
-                <td>
-                  {o.closePosition
-                    ? "Cierre total indicado (sin cantidad fija)"
-                    : o.quantity}
-                </td>
-                <td>
-                  {o.price} /{" "}
-                  {o.orderType === "TRAILING_STOP_MARKET"
-                    ? `Activación ${o.activatePrice} · Callback ${o.callbackRate}%`
-                    : o.triggerPrice}
-                  <br />
-                  {o.workingType}
-                </td>
-                <td>
-                  Reduce-only: {o.reduceOnly ? "sí" : "no"} · Cierre total:{" "}
-                  {o.closePosition ? "sí" : "no"}
-                </td>
-              </tr>
-            ))}
+            {algos
+              .slice(
+                currentAlgoPage * readPageSize,
+                (currentAlgoPage + 1) * readPageSize,
+              )
+              .map((o) => (
+                <tr key={`${o.symbol}:${o.algoId}`}>
+                  <td>
+                    {o.algoId}
+                    <br />
+                    {o.symbol}
+                  </td>
+                  <td>
+                    {o.side} / {o.positionSide}
+                  </td>
+                  <td>
+                    {o.orderType} / {o.algoStatus}
+                  </td>
+                  <td>
+                    {o.closePosition
+                      ? "Cierre total indicado (sin cantidad fija)"
+                      : o.quantity}
+                  </td>
+                  <td>
+                    {o.price} /{" "}
+                    {o.orderType === "TRAILING_STOP_MARKET"
+                      ? `Activación ${o.activatePrice} · Callback ${o.callbackRate}%`
+                      : o.triggerPrice}
+                    <br />
+                    {o.workingType}
+                  </td>
+                  <td>
+                    Reduce-only: {o.reduceOnly ? "sí" : "no"} · Cierre total:{" "}
+                    {o.closePosition ? "sí" : "no"}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
+      <ReadPagination
+        label="órdenes condicionales"
+        total={algos.length}
+        page={currentAlgoPage}
+        onPageChange={setAlgoPage}
+      />
       {snapshot.algoOrders.length === 0 && (
         <p>
           No se devolvieron órdenes condicionales abiertas en esta consulta.
+        </p>
+      )}
+      {snapshot.algoOrders.length > 0 && algos.length === 0 && (
+        <p>
+          No hay órdenes condicionales que coincidan con los filtros; la lectura
+          sí contiene otras órdenes.
         </p>
       )}
       <p className="muted-copy">

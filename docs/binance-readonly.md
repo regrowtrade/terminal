@@ -31,7 +31,7 @@ go run ./cmd/credentials -action provision -name "Binance personal · Lectura"
 
 En la imagen está disponible `/usr/local/bin/credentials` con los mismos flags. Requiere TTY interactivo: solicita API key y secret sin eco. No acepta secretos por argumentos/pipes/archivos. Verifica permisos y acceso efectivo a todos los componentes de la lectura mediante GET antes de guardar; no imprime el snapshot. Emite únicamente el UUID de cuenta. Si falla o el resultado es ambiguo, revisar el estado antes de repetir; no relaja permisos ni cambia nada en Binance.
 
-Después, el propietario autenticado puede abrir **Configuración → Comprobar conexión → Consultar cuenta y órdenes**. Comprobar conexión solo lista metadatos locales; no contacta a Binance. Cada snapshot vuelve a comprobar permisos. Las sesiones se validan junto con propiedad/RLS al leer el envelope; nunca se toma un ownerId del navegador.
+Después, el propietario autenticado puede abrir **Posiciones → Cuenta Binance · Solo lectura** o **Configuración**, y pulsar **Comprobar conexión → Consultar cuenta y órdenes**. Comprobar conexión solo lista metadatos locales; no contacta a Binance. Cada snapshot vuelve a comprobar permisos. Las sesiones se validan junto con propiedad/RLS al leer el envelope; nunca se toma un ownerId del navegador. Los [ejemplos quedan separados de la cuenta](account-views.md), sin fallback ni cargas automáticas.
 
 ## Rotación y retirada
 
@@ -61,7 +61,7 @@ La cuenta histórica permanece y el envelope se elimina transaccionalmente. **Re
 - Órdenes normales y algo permanecen en listas separadas. IDs int64 se decodifican sin float y se envían al navegador como strings. Se validan duplicados por símbolo/ID, BUY/SELL y BOTH/LONG/SHORT, cantidades, precios, estados abiertos, indicadores reduce-only/cierre total y condiciones de trailing. `executedQty` informa el acumulado devuelto por Binance, no un ledger de fills reconciliado. `closePosition=true` se muestra sin inventar una cantidad fija. Una orden condicional no acredita cobertura suficiente ni garantiza ejecución/pérdida máxima.
 - El catálogo público se limita explícitamente a perpetuos con cotización/margen USDT; una exposición privada fuera de ese alcance provoca rechazo, no filtrado silencioso. Se muestran PRICE_FILTER, LOT_SIZE, MARKET_LOT_SIZE, MIN_NOTIONAL, PERCENT_PRICE y límites de órdenes normales/algo. No se infiere tickSize/stepSize desde las precisiones; se preservan ceros y decimales. Los nombres de filtros desconocidos se muestran como no interpretados, nunca como validados. Son datos informativos: no se valida ni cuantiza una instrucción de trading.
 - No se consultan fills, comisiones/funding ni eventos privados. Un array de posiciones vacío **no** demuestra que no haya órdenes abiertas; incluso dos listas vacías solo describen consultas distintas, no una ausencia atómica ni un cierre confirmado. El precio de liquidación devuelto no es un stop ni una garantía de pérdida máxima.
-- Las otras vistas mantienen fixtures identificados y el planificador no consume estos datos automáticamente. No hay sincronización/reconciliación continua aún.
+- Posiciones reutiliza estas lecturas completas, con filtros locales por símbolo/lado y paginación explícita de 50 registros. Los ejemplos son opt-in y no se mezclan con la cuenta; el dashboard sigue ilustrativo y el planificador no consume estos datos automáticamente. No hay sincronización/reconciliación continua aún.
 
 ### Persistencia y recuperación
 
@@ -77,7 +77,7 @@ La última captura también guarda una **comparación durable de observaciones**
 
 ## Pruebas sin exchanges
 
-Unitarias del adaptador con RoundTripper local: firma/hosts/métodos, separación pública/privada, permisos, cooldown, redirecciones, errores sin secretos, IDs grandes, filtros, trailing, duplicados y datos parciales. Vault: cifrado aleatorio, AAD, manipulación y keyring incorrecto. CI PostgreSQL: ciphertext, RLS, sesión revocada, runtime sin escritura de credenciales, rotación/baja, auditoría y recuperación durable de snapshots tras reabrir el pool. Pruebas web/API y navegador con datos sintéticos para órdenes/filtros, eliminación de resultados tras un fallo y recuperación etiquetada como histórica. La herramienta de alta **no se ejecuta con claves reales** en tests. Eventos privados/reconexión y reconciliación siguen pendientes antes de sustituir fixtures o plantear testnet de ejecución.
+Unitarias del adaptador con RoundTripper local: firma/hosts/métodos, separación pública/privada, permisos, cooldown, redirecciones, errores sin secretos, IDs grandes, filtros, trailing, duplicados y datos parciales. Vault: cifrado aleatorio, AAD, manipulación y keyring incorrecto. CI PostgreSQL: ciphertext, RLS, sesión revocada, runtime sin escritura de credenciales, rotación/baja, auditoría y recuperación durable de snapshots tras reabrir el pool. Pruebas web/API y navegador con datos sintéticos para posiciones/órdenes/filtros, separación de fuentes, paginación, eliminación de resultados tras un fallo y recuperación etiquetada como histórica. La herramienta de alta **no se ejecuta con claves reales** en tests. Eventos privados/reconexión y reconciliación siguen pendientes antes de presentar un monitor sincronizado o plantear testnet de ejecución.
 
 ### Compatibilidad de despliegue
 

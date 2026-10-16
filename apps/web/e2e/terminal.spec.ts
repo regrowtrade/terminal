@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { syntheticSnapshot } from "../tests/fixtures/binance";
+import {
+  syntheticSnapshot,
+  syntheticAccountSnapshot,
+} from "../tests/fixtures/binance";
 import { syntheticComparison } from "../tests/fixtures/comparison";
 
 async function login(page: Page) {
@@ -22,10 +25,13 @@ test("requires login and protects the preview API", async ({
   await expect(page).toHaveURL(/\/login/);
   const response = await request.post("/api/plans/preview", { data: {} });
   expect(response.status()).toBe(401);
-  const comparison = await request.post("/api/connections/binance/comparison", {
-    data: { accountId: "00000000-0000-4000-8000-000000000001" },
-  });
-  expect(comparison.status()).toBe(401);
+  for (const operation of ["list", "snapshot", "latest", "comparison"]) {
+    const reading = await request.post(
+      `/api/connections/binance/${operation}`,
+      { data: { accountId: "00000000-0000-4000-8000-000000000001" } },
+    );
+    expect(reading.status()).toBe(401);
+  }
 });
 
 test("dashboard and a real Go preview work without executing orders", async ({
@@ -85,6 +91,9 @@ test("position filters work and logout removes access", async ({ page }) => {
   await login(page);
   const copiedCookies = await page.context().cookies();
   await page.getByRole("link", { name: "Posiciones", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Ejemplos de simulación", exact: true })
+    .click();
   await page.getByRole("textbox", { name: "Buscar activo" }).fill("missing");
   await expect(page.getByRole("status")).toHaveText(
     "No hay ejemplos que coincidan con tu búsqueda.",
@@ -229,6 +238,111 @@ test("settings can revoke every existing session", async ({
   } finally {
     await otherContext.close();
   }
+});
+
+test("account positions remain separate from examples and preserve historical precision", async ({
+  page,
+}) => {
+  await login(page);
+  const requests: string[] = [];
+  await page.route("**/api/connections/binance/**", (route) => {
+    const operation = new URL(route.request().url()).pathname
+      .split("/")
+      .at(-1)!;
+    requests.push(operation);
+    if (operation === "list")
+      return route.fulfill({
+        json: {
+          enabled: false,
+          accounts: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              name: "Synthetic one",
+              exchange: "binance",
+              environment: "production",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000002",
+              name: "Synthetic two",
+              exchange: "binance",
+              environment: "production",
+            },
+          ],
+        },
+      });
+    if (operation === "latest") {
+      const snapshot = syntheticAccountSnapshot();
+      snapshot.startedAt = "2020-01-01T00:00:00Z";
+      snapshot.capturedAt = "2020-01-01T00:00:01Z";
+      return route.fulfill({
+        json: { snapshot, storedAt: "2020-01-01T00:00:02Z" },
+      });
+    }
+    return route.fulfill({
+      status: 503,
+      json: { error: "Unexpected operation in offline test" },
+    });
+  });
+  await page.goto("/positions");
+  await expect(
+    page.getByRole("button", { name: "Cuenta Binance · Solo lectura" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("table")).toHaveCount(0);
+  expect(requests).toEqual([]);
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Consultar cuenta y órdenes" }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Mostrar última lectura guardada" })
+    .click();
+  await expect(page.getByText(/LECTURA GUARDADA · NO ACTUAL/)).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "1.000000000000000001", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Lado de posición", { exact: true })
+    .selectOption("SHORT");
+  await expect(
+    page.getByRole("cell", { name: "-2.000000000000000001", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "1.000000000000000001", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("cell", { name: /9007199254740993/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("searchbox", { name: "Buscar símbolo", exact: true })
+    .fill("missing");
+  await expect(page.getByText(/No hay posiciones que coincidan/)).toBeVisible();
+  expect(requests).toEqual(["list", "latest"]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Quitar filtros" }).click();
+  await page
+    .getByLabel("Cuenta de lectura", { exact: true })
+    .selectOption("00000000-0000-4000-8000-000000000002");
+  await expect(page.getByRole("table")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Ejemplos de simulación", exact: true })
+    .click();
+  await expect(
+    page.getByRole("table", { name: /Posiciones sintéticas/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Cuenta Binance · Solo lectura", exact: true })
+    .click();
+  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(
+    page.getByLabel("Cuenta de lectura", { exact: true }),
+  ).toHaveCount(0);
+  expect(requests).toEqual(["list", "latest"]);
 });
 
 test("synthetic comparison preserves exact values and unknown missing-order state", async ({

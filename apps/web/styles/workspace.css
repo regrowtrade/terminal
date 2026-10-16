@@ -836,6 +836,73 @@ td small {
   min-width: 0;
   padding: 0 24px 22px;
 }
+.data-source-controls,
+.read-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 16px 0;
+}
+.data-source-controls .button[aria-pressed="true"] {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.account-read-card {
+  padding: 24px;
+  min-width: 0;
+}
+.account-read-card .muted-copy,
+.read-pagination {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.account-read-card .muted-copy {
+  margin: 16px 0;
+  color: var(--muted);
+}
+.account-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px;
+  margin: 20px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  min-width: 0;
+}
+.account-filters legend,
+.account-filters label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.account-filters .account-filter-field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.account-filters label {
+  display: block;
+}
+.account-filters input {
+  width: 100%;
+  min-width: 0;
+  display: block;
+  padding: 10px;
+  margin: 12px 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.read-pagination span {
+  flex-basis: 100%;
+}
+.binance-readonly .button,
+.data-source-controls .button {
+  max-width: 100%;
+  white-space: normal;
+}
 .binance-readonly .table-scroll {
   overflow-x: auto;
   margin-top: 16px;
