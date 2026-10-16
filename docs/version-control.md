@@ -10,10 +10,16 @@
 - Nunca incluir `.env`, tokens, contraseñas ni claves de exchange. Revisar el diff antes de publicar.
 - No reescribir el historial compartido ni hacer force-push sin aprobación.
 
-## Primera rama de transición
+## Entregas de transición revisadas
 
 `feat/railway-foundation`: commit separado para la corrección del puerto de preview, seguido de infraestructura Railway y base PostgreSQL. No incluye datos privados del exchange ni habilita trading. La versión `0.1.0` del contrato de preview se conserva: `/readyz` es una adición compatible y no representa una release de ejecución real.
 
-`feat/persistent-owner-sessions`: entrega dependiente con identidad personal, sesiones persistidas/revocables y auditoría. Mientras infraestructura esté pendiente, su PR apunta a `feat/railway-foundation` para mostrar solo el nuevo alcance. Revisar/mergear primero infraestructura; después cambiar la base del segundo PR a `main` y comprobar diff/CI. No mergear la segunda rama dentro de la primera para saltar la revisión por entrega. Sin tags de release antes de aprobación.
+`feat/persistent-owner-sessions`: identidad personal, sesiones persistidas/revocables y auditoría. El PR #2 fue revisado y mergeado en `feat/railway-foundation`, después de que el PR #1 integrara infraestructura en `main`.
 
-`feat/binance-readonly-vault`: depende de sesiones; su PR apunta inicialmente a `feat/persistent-owner-sessions`. Revisar en orden infraestructura → sesiones → credenciales/lectura; cambiar la base a `main` después de integrar su dependencia y volver a comprobar diff/CI. Sin ejecución ni despliegue automático de ramas de trabajo.
+`feat/binance-readonly-vault`: credenciales cifradas y Binance solo lectura. El PR #3 fue revisado y mergeado en `feat/persistent-owner-sessions`. Sin ejecución ni despliegue automático de ramas de trabajo.
+
+## Consolidación hacia `main`
+
+Los tres PRs revisados no quedaron todos en `main`: los merges de PRs encadenados solo actualizan su rama base, no las ramas donde esa base se hubiera integrado anteriormente. La rama `chore/consolidate-approved-deliveries`, creada desde la rama que recibió el PR #3, reúne el código aprobado de sesiones y credenciales para un PR explícito hacia `main`. No añade capacidades de trading ni acredita un despliegue. El propietario debe revisar el diff final y las puertas de CI antes de hacer merge; el agente no lo hace.
+
+Para futuras entregas dependientes, una vez integrado el PR anterior, cambiar la base del siguiente PR abierto a `main` y comprobar otra vez diff/CI **antes** de mergearlo. Crear las nuevas ramas desde `main` actualizado cuando todas sus dependencias estén allí. No considerar una entrega disponible en `main` solo porque GitHub marque su PR como mergeado.

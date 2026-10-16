@@ -110,6 +110,6 @@ docs           → reglas, decisiones, seguridad
 infra          → imágenes y plantilla de despliegue
 ```
 
-Orden siguiente: revisar/desplegar identidad personal y sesiones → credenciales cifradas y adaptador Binance solo lectura → reconciliación y filtros → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → multiusuario / Bybit / Telegram.
+Orden siguiente: consolidar en `main` las entregas ya revisadas de sesiones y credenciales/lectura (los PRs #2 y #3 se mergearon en ramas dependientes; ver [control de versiones](docs/version-control.md)) → verificar despliegue y prerrequisitos operativos de lectura → instrumentos/filtros, órdenes normales/algo y reconciliación → ejecución idempotente en testnet → protección y automatizaciones → journal sincronizado → multiusuario / Bybit / Telegram.
 
 No habilitar órdenes reales hasta completar los controles de [docs/security.md](docs/security.md). El despliegue acordado es web + motor + PostgreSQL en Railway: [docs/deployment.md](docs/deployment.md). Railway Hobby tiene pendiente la solución de IP de salida fija antes de trading. Para ramas, PRs revisados por el propietario y tags de versiones aprobadas, ver [docs/version-control.md](docs/version-control.md).
