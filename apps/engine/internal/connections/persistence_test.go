@@ -34,6 +34,9 @@ func (s *snapshotStore) SaveReadSnapshot(context.Context, string, string, binanc
 func (s *snapshotStore) LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error) {
 	return database.StoredSnapshot{}, s.err
 }
+func (s *snapshotStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
+	return database.StoredComparison{}, s.err
+}
 
 type snapshotReader struct {
 	err   error

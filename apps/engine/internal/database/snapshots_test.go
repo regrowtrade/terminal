@@ -44,6 +44,10 @@ func testReadSnapshotLifecycle(t *testing.T, ctx context.Context, store *Store, 
 	if err := store.SaveReadSnapshot(ctx, hash, account, snapshot); err != nil {
 		t.Fatal("could not persist synthetic reading", err)
 	}
+	initial, err := store.LatestReadComparison(ctx, hash, account)
+	if err != nil || initial.Report.Status != "initial_observation" || initial.Report.PreviousCapturedAt != nil || initial.Report.TotalChanges != 0 {
+		t.Fatal("initial observation invented a baseline")
+	}
 	restarted, err := Open(ctx, runtimeURI, store.migrations)
 	if err != nil {
 		t.Fatal("could not reopen snapshot pool")
@@ -54,12 +58,20 @@ func testReadSnapshotLifecycle(t *testing.T, ctx context.Context, store *Store, 
 		t.Fatal("snapshot did not survive pool restart")
 	}
 	newer := snapshot
+	newer.Assets = append([]binance.Asset{}, snapshot.Assets...)
+	newer.Assets[0].WalletBalance = "101.00000001"
 	newer.CapturedAt = newer.CapturedAt.Add(time.Second)
 	if err := store.SaveReadSnapshot(ctx, hash, account, newer); err != nil {
 		t.Fatal("newer snapshot rejected")
 	}
 	if err := store.SaveReadSnapshot(ctx, hash, account, snapshot); !errors.Is(err, ErrSnapshotInvalid) {
 		t.Fatal("older observation overwrote latest")
+	}
+	comparison, err := restarted.LatestReadComparison(ctx, hash, account)
+	if err != nil || comparison.Report.Status != "compared" || comparison.Report.TotalChanges != 1 ||
+		comparison.Report.PreviousCapturedAt == nil || !comparison.Report.PreviousCapturedAt.Equal(snapshot.CapturedAt) ||
+		!comparison.Report.CurrentCapturedAt.Equal(newer.CapturedAt) || *comparison.Report.Changes[0].Fields[0].Before != "100.00000001" {
+		t.Fatal("comparison not durable or baseline/result mismatched")
 	}
 	var count int
 	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM exchange_read_snapshots WHERE account_id=$1`, account).Scan(&count); err != nil || count != 1 {
@@ -126,4 +138,8 @@ func testReadSnapshotLifecycle(t *testing.T, ctx context.Context, store *Store, 
 	if _, err := store.LatestReadSnapshot(ctx, transient, account); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatal("revoked session recovered observation")
 	}
+	if _, err := store.LatestReadComparison(ctx, transient, account); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatal("revoked session recovered comparison")
+	}
+	testReadComparisons(t, ctx, store, admin, hash, account)
 }

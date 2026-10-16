@@ -22,6 +22,6 @@
 
 Los tres PRs revisados no quedaron inicialmente todos en `main`: los merges de PRs encadenados solo actualizan su rama base, no las ramas donde esa base se hubiera integrado anteriormente. El propietario ya integró el PR #4 desde `chore/consolidate-approved-deliveries` en `main`, reuniendo sesiones y credenciales previamente aprobadas. No añade capacidades de trading ni acredita un despliegue.
 
-El PR #5, `feat/binance-market-orders`, apunta directamente a `main` e incorpora únicamente el nuevo alcance de órdenes/filtros y lecturas persistidas sobre esa consolidación. El propietario revisa diff/CI y hace el merge; el agente no lo hace.
+El PR #5, `feat/binance-market-orders`, ya fue integrado por el propietario directamente en `main` e incorpora el nuevo alcance de órdenes/filtros y lecturas persistidas sobre esa consolidación. La rama `feat/binance-observation-comparison` parte de ese `main` actualizado y añade solo la comparación durable entre observaciones, no eventos privados ni ejecución. El propietario revisa diff/CI y hace el merge; el agente no lo hace.
 
 Para futuras entregas dependientes, una vez integrado el PR anterior, cambiar la base del siguiente PR abierto a `main` y comprobar otra vez diff/CI **antes** de mergearlo. Crear las nuevas ramas desde `main` actualizado cuando todas sus dependencias estén allí. No considerar una entrega disponible en `main` solo porque GitHub marque su PR como mergeado.

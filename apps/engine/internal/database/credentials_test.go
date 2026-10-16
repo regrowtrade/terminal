@@ -103,6 +103,9 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	if _, err := store.LatestReadSnapshot(ctx, hash, id); err != nil {
 		t.Fatal("key deletion removed historical evidence")
 	}
+	if _, err := store.LatestReadComparison(ctx, hash, id); err != nil {
+		t.Fatal("key deletion removed historical comparison")
+	}
 	if err := store.SaveReadSnapshot(ctx, hash, id, syntheticReadSnapshot()); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can still save readings")
 	}

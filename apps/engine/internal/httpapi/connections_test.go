@@ -28,6 +28,10 @@ func (f *fakeConnections) Latest(context.Context, string, string) (database.Stor
 	f.calls++
 	return database.StoredSnapshot{}, f.err
 }
+func (f *fakeConnections) Comparison(context.Context, string, string) (database.StoredComparison, error) {
+	f.calls++
+	return database.StoredComparison{}, f.err
+}
 func TestConnectionBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, token string
@@ -74,5 +78,49 @@ func TestStoredSnapshotBoundary(t *testing.T) {
 		if w.Code != tc.status || service.calls != 1 || strings.Contains(w.Body.String(), "private-driver-details") || w.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal("unsafe historical endpoint", w.Code)
 		}
+	}
+}
+func TestStoredComparisonBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{{nil, 200}, {database.ErrComparisonMissing, 404}, {database.ErrSessionInvalid, 401}, {database.ErrAccountMissing, 404}, {errors.New("private-driver-details"), 503}} {
+		service := &fakeConnections{err: tc.err}
+		r := httptest.NewRequest("POST", "/v1/connections/binance/comparison", strings.NewReader(`{"tokenHash":"`+strings.Repeat("a", 64)+`","accountId":"00000000-0000-4000-8000-000000000001"}`))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
+		if w.Code != tc.status || service.calls != 1 || strings.Contains(w.Body.String(), "private-driver-details") || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("unsafe comparison response", w.Code)
+		}
+	}
+}
+
+func TestStoredComparisonRejectsUntrustedRequests(t *testing.T) {
+	valid := `{"tokenHash":"` + strings.Repeat("a", 64) + `","accountId":"00000000-0000-4000-8000-000000000001"}`
+	for _, tc := range []struct {
+		name, body, token, contentType string
+		status                         int
+	}{
+		{"anonymous", valid, "", "application/json", 401},
+		{"wrong content type", valid, testToken, "text/plain", 415},
+		{"owner injection", strings.TrimSuffix(valid, "}") + `,"ownerId":"attacker"}`, testToken, "application/json", 400},
+		{"baseline injection", strings.TrimSuffix(valid, "}") + `,"previousSnapshot":{}}`, testToken, "application/json", 400},
+		{"missing account", `{"tokenHash":"` + strings.Repeat("a", 64) + `"}`, testToken, "application/json", 400},
+		{"invalid digest", strings.Replace(valid, strings.Repeat("a", 64), strings.Repeat("z", 64), 1), testToken, "application/json", 400},
+		{"trailing input", valid + ` {}`, testToken, "application/json", 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &fakeConnections{}
+			r := httptest.NewRequest("POST", "/v1/connections/binance/comparison", strings.NewReader(tc.body))
+			r.Header.Set("Authorization", "Bearer "+tc.token)
+			r.Header.Set("Content-Type", tc.contentType)
+			w := httptest.NewRecorder()
+			HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
+			if w.Code != tc.status || service.calls != 0 {
+				t.Fatal("untrusted comparison request reached service", w.Code)
+			}
+		})
 	}
 }
