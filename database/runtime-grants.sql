@@ -11,6 +11,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.owner_sessions TO terminal_runtim
 -- Runtime may decrypt only after server-side session/ownership checks. Credential
 -- provisioning/rotation/deletion belongs to the separate administrative CLI.
 GRANT SELECT ON public.exchange_credentials TO terminal_runtime;
+-- Replace only the latest observation. No runtime deletion of saved readings.
+GRANT SELECT, INSERT, UPDATE ON public.exchange_read_snapshots TO terminal_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.exchange_accounts, public.trade_campaigns, public.strategy_plans,
   public.order_intents, public.executions, public.campaign_ledger, public.journal_notes

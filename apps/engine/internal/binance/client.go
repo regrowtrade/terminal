@@ -26,9 +26,10 @@ var ErrRateLimited = errors.New("lectura limitada temporalmente; espera antes de
 var ErrResponse = errors.New("Binance devolvió datos incompletos o no compatibles")
 
 type Client struct {
-	http *http.Client
-	mu   sync.Mutex
-	next time.Time
+	http   *http.Client
+	mu     sync.Mutex
+	next   time.Time
+	active bool
 }
 
 func New() *Client {
@@ -42,11 +43,17 @@ func newClient(transport http.RoundTripper) *Client {
 func (c *Client) begin() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if time.Now().Before(c.next) {
+	if c.active || time.Now().Before(c.next) {
 		return ErrRateLimited
 	}
+	c.active = true
 	c.next = time.Now().Add(10 * time.Second)
 	return nil
+}
+func (c *Client) end() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.active = false
 }
 func (c *Client) cooldown(header string) {
 	duration := time.Minute
@@ -64,12 +71,23 @@ func (c *Client) cooldown(header string) {
 }
 func (c *Client) get(ctx context.Context, path string, credentials *vault.Credentials, timestamp int64, target any) error {
 	origin := "https://fapi.binance.com"
+	public := false
+	max := 2 * 1024 * 1024
 	switch path {
-	case "/fapi/v1/time", "/fapi/v3/account", "/fapi/v3/positionRisk":
+	case "/fapi/v1/time":
+		public = true
+	case "/fapi/v1/exchangeInfo":
+		public = true
+		max = 8 * 1024 * 1024
+	case "/fapi/v3/account", "/fapi/v3/positionRisk", "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders":
 	case "/sapi/v1/account/apiRestrictions":
 		origin = "https://api.binance.com"
 	default:
 		return ErrUnavailable
+	}
+	// Public metadata never receives keys; private reads always require them.
+	if public != (credentials == nil) {
+		return ErrPermissions
 	}
 	u, _ := url.Parse(origin + path)
 	if credentials != nil {
@@ -104,8 +122,7 @@ func (c *Client) get(ctx context.Context, path string, credentials *vault.Creden
 	if response.StatusCode != 200 {
 		return ErrUnavailable
 	}
-	const max = 2 * 1024 * 1024
-	body, err := io.ReadAll(io.LimitReader(response.Body, max+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(max)+1))
 	if err != nil || len(body) > max {
 		return ErrResponse
 	}
@@ -143,9 +160,6 @@ func (p permissions) safe() bool {
 func (c *Client) checked(ctx context.Context, credentials vault.Credentials) (func() int64, error) {
 	if !credentials.Valid() {
 		return nil, ErrPermissions
-	}
-	if err := c.begin(); err != nil {
-		return nil, err
 	}
 	start := time.Now()
 	var clock struct {
@@ -186,6 +200,10 @@ func (c *Client) checked(ctx context.Context, credentials vault.Credentials) (fu
 	return now, nil
 }
 func (c *Client) Verify(ctx context.Context, credentials vault.Credentials) error {
+	if err := c.begin(); err != nil {
+		return err
+	}
+	defer c.end()
 	_, err := c.checked(ctx, credentials)
 	return err
 }
@@ -206,17 +224,28 @@ type Position struct {
 	LiquidationPrice string `json:"liquidationPrice"`
 }
 type Snapshot struct {
-	Source         string     `json:"source"`
-	Mode           string     `json:"mode"`
-	CapturedAt     time.Time  `json:"capturedAt"`
-	Consistency    string     `json:"consistency"`
-	ExecutionReady bool       `json:"executionReady"`
-	Assets         []Asset    `json:"assets"`
-	Positions      []Position `json:"positions"`
+	Source         string       `json:"source"`
+	Mode           string       `json:"mode"`
+	CapturedAt     time.Time    `json:"capturedAt"`
+	StartedAt      time.Time    `json:"startedAt"`
+	Consistency    string       `json:"consistency"`
+	ExecutionReady bool         `json:"executionReady"`
+	Assets         []Asset      `json:"assets"`
+	Positions      []Position   `json:"positions"`
+	OpenOrders     []Order      `json:"openOrders"`
+	AlgoOrders     []AlgoOrder  `json:"algoOrders"`
+	Instruments    []Instrument `json:"instruments"`
 }
 
 func (c *Client) Snapshot(ctx context.Context, credentials vault.Credentials) (Snapshot, error) {
 	var result Snapshot
+	if err := c.begin(); err != nil {
+		return result, err
+	}
+	defer c.end()
+	started := time.Now().UTC()
+	ctx, cancel := context.WithTimeout(ctx, 18*time.Second)
+	defer cancel()
 	now, err := c.checked(ctx, credentials)
 	if err != nil {
 		return result, err
@@ -234,5 +263,32 @@ func (c *Client) Snapshot(ctx context.Context, credentials vault.Credentials) (S
 	if err := validate(account.Assets, positions); err != nil {
 		return result, err
 	}
-	return Snapshot{Source: "binance-production", Mode: "read_only", CapturedAt: time.Now().UTC(), Consistency: "rest_non_atomic", ExecutionReady: false, Assets: account.Assets, Positions: positions}, nil
+	orders, algos, err := c.orders(ctx, credentials, now)
+	if err != nil {
+		return result, err
+	}
+	instruments, err := c.instruments(ctx)
+	if err != nil {
+		return result, err
+	}
+	known := make(map[string]bool, len(instruments))
+	for _, i := range instruments {
+		known[i.Symbol] = true
+	}
+	for _, p := range positions {
+		if !known[p.Symbol] {
+			return result, ErrResponse
+		}
+	}
+	for _, o := range orders {
+		if !known[o.Symbol] {
+			return result, ErrResponse
+		}
+	}
+	for _, o := range algos {
+		if !known[o.Symbol] {
+			return result, ErrResponse
+		}
+	}
+	return Snapshot{Source: "binance-production", Mode: "read_only", StartedAt: started, CapturedAt: time.Now().UTC(), Consistency: "rest_non_atomic", ExecutionReady: false, Assets: account.Assets, Positions: positions, OpenOrders: orders, AlgoOrders: algos, Instruments: instruments}, nil
 }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { syntheticSnapshot } from "../tests/fixtures/binance";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -96,7 +97,7 @@ test("settings keeps live access disabled for local sessions and never requests 
   await login(page);
   await page.goto("/settings");
   await expect(
-    page.getByText("REST manual · Solo lectura · Sin órdenes"),
+    page.getByText("REST manual · Solo lectura · Sin ejecución"),
   ).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await page
@@ -112,6 +113,94 @@ test("settings keeps live access disabled for local sessions and never requests 
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("synthetic read-only orders and filters render without exchange access", async ({
+  page,
+}) => {
+  await login(page);
+  // Browser-only fixtures exercise rendering. They do not enable the engine
+  // adapter, supply keys or send any requests to Binance.
+  await page.route("**/api/connections/binance/list", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        accounts: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Synthetic",
+            exchange: "binance",
+            environment: "production",
+          },
+        ],
+      },
+    }),
+  );
+  let reads = 0;
+  await page.route("**/api/connections/binance/snapshot", (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ json: syntheticSnapshot() })
+      : route.fulfill({
+          status: 503,
+          json: { error: "Lectura sintética no disponible." },
+        });
+  });
+  await page.route("**/api/connections/binance/latest", (route) =>
+    route.fulfill({
+      json: {
+        snapshot: {
+          ...syntheticSnapshot(),
+          startedAt: "2020-01-01T00:00:00Z",
+          capturedAt: "2020-01-01T00:00:01Z",
+        },
+        storedAt: "2020-01-01T00:00:02Z",
+      },
+    }),
+  );
+  await page.goto("/settings");
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Consultar cuenta y órdenes", exact: true })
+    .click();
+  const reading = page.getByRole("region", { name: "Lectura de Binance" });
+  await expect(
+    reading.getByRole("cell", { name: /9007199254740993/ }),
+  ).toBeVisible();
+  await expect(
+    reading.getByRole("cell", { name: /9007199254740995/ }),
+  ).toBeVisible();
+  await reading.getByText(/Instrumentos y filtros USDT perpetuos/).click();
+  await expect(
+    reading.getByRole("table", { name: /Filtros publicados/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /enviar orden|ejecutar orden|cancelar orden/i,
+    }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("button", { name: "Consultar cuenta y órdenes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Lectura sintética" }),
+  ).toBeVisible();
+  await expect(reading).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: "Mostrar última lectura guardada",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByText(/LECTURA GUARDADA · NO ACTUAL/)).toBeVisible();
+  await expect(page.getByText(/Recuperada de PostgreSQL/)).toBeVisible();
 });
 
 test("settings can revoke every existing session", async ({

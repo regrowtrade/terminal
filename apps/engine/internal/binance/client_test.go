@@ -36,6 +36,9 @@ func safePermissions() map[string]bool {
 
 const assets = `{"assets":[{"asset":"USDT","walletBalance":"100.00000001","unrealizedProfit":"-2","availableBalance":"80"}]}`
 const positions = `[{"symbol":"BTCUSDT","positionSide":"SHORT","positionAmt":"-1","entryPrice":"100","markPrice":"102","unRealizedProfit":"-2","liquidationPrice":"150"}]`
+const openOrders = `[{"orderId":9007199254740993,"clientOrderId":"synthetic-limit","symbol":"BTCUSDT","side":"BUY","positionSide":"SHORT","type":"LIMIT","status":"PARTIALLY_FILLED","origQty":"2","executedQty":"0.5","price":"90.00000001","stopPrice":"0","reduceOnly":true,"closePosition":false,"workingType":"CONTRACT_PRICE","updateTime":1750514941540}]`
+const algoOrders = `[{"algoId":9007199254740995,"clientAlgoId":"synthetic-stop","algoType":"CONDITIONAL","symbol":"BTCUSDT","side":"BUY","positionSide":"SHORT","orderType":"STOP_MARKET","algoStatus":"NEW","quantity":"0","price":"0","triggerPrice":"120","reduceOnly":false,"closePosition":true,"workingType":"MARK_PRICE","updateTime":1750514941540}]`
+const exchangeInfo = `{"symbols":[{"symbol":"BTCUSDT","contractType":"PERPETUAL","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","marginAsset":"USDT","pricePrecision":2,"quantityPrecision":3,"filters":[{"filterType":"PRICE_FILTER","minPrice":"0.10","maxPrice":"1000000","tickSize":"0.10"},{"filterType":"LOT_SIZE","minQty":"0.001","maxQty":"1000","stepSize":"0.001"},{"filterType":"MARKET_LOT_SIZE","minQty":"0.001","maxQty":"100","stepSize":"0.000"},{"filterType":"MIN_NOTIONAL","notional":"5"},{"filterType":"PERCENT_PRICE","multiplierUp":"1.05","multiplierDown":"0.95"},{"filterType":"MAX_NUM_ORDERS","limit":200},{"filterType":"MAX_NUM_ALGO_ORDERS","limit":10}]}]}`
 
 func fakeClient(t *testing.T, c vault.Credentials, permissions map[string]bool, overrides map[string]string) *Client {
 	t.Helper()
@@ -51,7 +54,7 @@ func fakeClient(t *testing.T, c vault.Credentials, permissions map[string]bool, 
 		if r.URL.Host != host {
 			t.Fatal("unexpected destination")
 		}
-		if path == "/fapi/v1/time" {
+		if path == "/fapi/v1/time" || path == "/fapi/v1/exchangeInfo" {
 			if r.Header.Get("X-MBX-APIKEY") != "" || r.URL.RawQuery != "" {
 				t.Fatal("credential leaked on public request")
 			}
@@ -79,6 +82,12 @@ func fakeClient(t *testing.T, c vault.Credentials, permissions map[string]bool, 
 			body = assets
 		case "/fapi/v3/positionRisk":
 			body = positions
+		case "/fapi/v1/openOrders":
+			body = openOrders
+		case "/fapi/v1/openAlgoOrders":
+			body = algoOrders
+		case "/fapi/v1/exchangeInfo":
+			body = exchangeInfo
 		default:
 			t.Fatal("endpoint outside allowlist")
 		}
@@ -97,6 +106,9 @@ func TestSnapshotUsesOnlyAllowlistedSignedReads(t *testing.T) {
 	}
 	if snapshot.ExecutionReady || snapshot.Consistency != "rest_non_atomic" || snapshot.Assets[0].WalletBalance != "100.00000001" || snapshot.Positions[0].Quantity != "-1" {
 		t.Fatal("snapshot lost decimal/side/source semantics")
+	}
+	if snapshot.OpenOrders[0].ID != "9007199254740993" || snapshot.AlgoOrders[0].ID != "9007199254740995" || snapshot.OpenOrders[0].Executed != "0.5" || !snapshot.AlgoOrders[0].ClosePosition || snapshot.Instruments[0].Price.Step != "0.10" || snapshot.Instruments[0].MarketLot.Step != "0.000" || snapshot.StartedAt.After(snapshot.CapturedAt) {
+		t.Fatal("order identity, filter or observation interval lost")
 	}
 	raw, _ := json.Marshal(snapshot)
 	if strings.Contains(string(raw), c.APIKey) || strings.Contains(string(raw), c.APISecret) {

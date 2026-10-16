@@ -157,7 +157,7 @@ func TestPostgresIsolationAndMigrations(t *testing.T) {
 		t.Fatal("failed callback was not rolled back")
 	}
 	broken := append(append([]Migration(nil), migrations...), Migration{
-		Name: "0004_broken.sql", Checksum: "synthetic-invalid-migration",
+		Name: "0005_broken.sql", Checksum: "synthetic-invalid-migration",
 		SQL: "CREATE TABLE atomic_check(id int); SELECT 1 / 0;",
 	})
 	if err := Migrate(ctx, testURI, broken); err == nil {

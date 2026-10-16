@@ -3,7 +3,11 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { authenticated, cookieName } from "./auth";
 import { engineURL } from "./engine";
-import { connectionStateSchema, snapshotSchema } from "./connections-schema";
+import {
+  connectionStateSchema,
+  snapshotSchema,
+  storedSnapshotSchema,
+} from "./connections-schema";
 import { boundedText } from "./request";
 import { sameOrigin, AttemptLimiter } from "./security";
 import { sessionBackend, sessionDigest } from "./sessions";
@@ -17,7 +21,7 @@ function json(body: unknown, status: number) {
 }
 export async function connectionRequest(
   request: Request,
-  operation: "list" | "snapshot",
+  operation: "list" | "snapshot" | "latest",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -73,7 +77,10 @@ export async function connectionRequest(
     if (!response.ok) {
       const errors: Record<number, string> = {
         401: "Sesión no válida. Vuelve a iniciar sesión.",
-        404: "Cuenta no disponible.",
+        404:
+          operation === "latest"
+            ? "Cuenta o lectura guardada no disponible."
+            : "Cuenta no disponible.",
         422: "La clave no cumple los permisos de lectura e IP requeridos. Revisa los permisos en Binance; no actives trading.",
         429: "Binance limitó temporalmente las consultas. Espera antes de actualizar.",
         503: "Lectura no disponible. Revisa PostgreSQL, cifrado y habilitación del motor; no se enviaron órdenes.",
@@ -81,11 +88,16 @@ export async function connectionRequest(
       const status = response.status in errors ? response.status : 503;
       return json({ error: errors[status] }, status);
     }
-    const body: unknown = await response.json();
+    const body: unknown = JSON.parse(
+      await boundedText(response, 8 * 1024 * 1024),
+    );
     return json(
-      (operation === "list" ? connectionStateSchema : snapshotSchema).parse(
-        body,
-      ),
+      (operation === "list"
+        ? connectionStateSchema
+        : operation === "latest"
+          ? storedSnapshotSchema
+          : snapshotSchema
+      ).parse(body),
       200,
     );
   } catch {

@@ -1,5 +1,5 @@
 export async function boundedText(
-  request: Request,
+  request: Pick<Request, "body">,
   limit = 16_384,
 ): Promise<string> {
   if (!request.body) throw new Error("Empty body");

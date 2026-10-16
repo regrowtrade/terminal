@@ -133,7 +133,7 @@ paths:
   /v1/connections/binance/snapshot:
     post:
       operationId: readBinanceSnapshot
-      description: Opt-in manual USDT account/position REST reads after session, ownership, decryption and least-privilege/IP verification. Multiple non-atomic requests, no orders, no streams or retries at application level. Unsupported/incomplete exposures fail without returning a partial result. Never use as execution readiness.
+      description: Opt-in manual USDT account/position, normal/algo open orders and perpetual instrument REST reads after session, ownership, decryption and least-privilege/IP verification. Seven non-atomic requests, no submission/cancellation, streams or retries at application level. Unsupported/incomplete responses fail without returning a partial result. Rechecks session/account and durably replaces the latest observation before success; no automatic fallback on failure. Never use as execution readiness. Requires coordinated web/engine rollout for the expanded strict response.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -158,6 +158,33 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/latest:
+    post:
+      operationId: latestStoredBinanceSnapshot
+      description: Explicit historical recovery of the latest saved manual reading. Requires a valid session and account ownership, but no key decryption or external request. Available with the live reader disabled. Never current or reconciled data. No saved reading and unavailable accounts both return 404.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Saved historical observation, not refreshed from Binance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoredBinanceSnapshot" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /v1/plans/preview:
     post:
@@ -234,6 +261,13 @@ components:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'
       description: Unmodified decimal string from the exchange, never binary float arithmetic.
+    StoredBinanceSnapshot:
+      type: object
+      additionalProperties: false
+      required: [snapshot, storedAt]
+      properties:
+        snapshot: { $ref: "#/components/schemas/BinanceReadSnapshot" }
+        storedAt: { type: string, format: date-time }
     BinanceReadSnapshot:
       type: object
       additionalProperties: false
@@ -241,15 +275,20 @@ components:
         [
           source,
           mode,
+          startedAt,
           capturedAt,
           consistency,
           executionReady,
           assets,
           positions,
+          openOrders,
+          algoOrders,
+          instruments,
         ]
       properties:
         source: { const: binance-production }
         mode: { const: read_only }
+        startedAt: { type: string, format: date-time }
         capturedAt: { type: string, format: date-time }
         consistency: { const: rest_non_atomic }
         executionReady: { const: false }
@@ -289,6 +328,175 @@ components:
               markPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
               unRealizedProfit: { $ref: "#/components/schemas/ExchangeDecimal" }
               liquidationPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
+        openOrders:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/BinanceOpenOrder" }
+        algoOrders:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/BinanceAlgoOrder" }
+        instruments:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/BinanceInstrument" }
+    ExchangeNonnegative:
+      type: string
+      pattern: '^(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'
+    ExchangeOrderId:
+      type: string
+      pattern: "^[1-9][0-9]{0,18}$"
+      description: Positive int64 ID, maximum 9223372036854775807. Never a JSON number at our boundary.
+    BinanceOpenOrder:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          orderId,
+          clientOrderId,
+          symbol,
+          side,
+          positionSide,
+          type,
+          status,
+          origQty,
+          executedQty,
+          price,
+          stopPrice,
+          reduceOnly,
+          closePosition,
+          workingType,
+          updateTime,
+        ]
+      properties:
+        orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientOrderId: { type: string, pattern: "^[.A-Z:/a-z0-9_-]{1,64}$" }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        type:
+          {
+            enum:
+              [
+                LIMIT,
+                MARKET,
+                STOP,
+                STOP_MARKET,
+                TAKE_PROFIT,
+                TAKE_PROFIT_MARKET,
+                TRAILING_STOP_MARKET,
+              ],
+          }
+        status: { enum: [NEW, PARTIALLY_FILLED] }
+        origQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        executedQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        stopPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        reduceOnly: { type: boolean }
+        closePosition: { type: boolean }
+        workingType: { enum: ["", MARK_PRICE, CONTRACT_PRICE] }
+        activatePrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        priceRate: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        updateTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    BinanceAlgoOrder:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          algoId,
+          clientAlgoId,
+          algoType,
+          symbol,
+          side,
+          positionSide,
+          orderType,
+          algoStatus,
+          quantity,
+          price,
+          triggerPrice,
+          reduceOnly,
+          closePosition,
+          workingType,
+          updateTime,
+        ]
+      properties:
+        algoId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientAlgoId: { type: string, pattern: "^[.A-Z:/a-z0-9_-]{1,64}$" }
+        algoType: { const: CONDITIONAL }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        orderType:
+          {
+            enum:
+              [
+                STOP,
+                STOP_MARKET,
+                TAKE_PROFIT,
+                TAKE_PROFIT_MARKET,
+                TRAILING_STOP_MARKET,
+              ],
+          }
+        algoStatus: { const: NEW }
+        quantity: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        triggerPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        reduceOnly: { type: boolean }
+        closePosition: { type: boolean }
+        workingType: { enum: [MARK_PRICE, CONTRACT_PRICE] }
+        activatePrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        callbackRate: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        updateTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    BinanceRangeFilter:
+      type: object
+      additionalProperties: false
+      required: [min, max, step]
+      properties:
+        min: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        max: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        step: { $ref: "#/components/schemas/ExchangeNonnegative" }
+    BinanceInstrument:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          symbol,
+          contractType,
+          status,
+          baseAsset,
+          quoteAsset,
+          marginAsset,
+          priceFilter,
+          lotSize,
+          marketLotSize,
+          minNotional,
+          multiplierUp,
+          multiplierDown,
+          maxNumOrders,
+          maxNumAlgoOrders,
+          unrecognizedFilterTypes,
+        ]
+      properties:
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        contractType: { const: PERPETUAL }
+        status: { type: string, pattern: "^[A-Z0-9_]{1,40}$" }
+        baseAsset: { type: string, pattern: "^[A-Z0-9_]{1,40}$" }
+        quoteAsset: { const: USDT }
+        marginAsset: { const: USDT }
+        priceFilter: { $ref: "#/components/schemas/BinanceRangeFilter" }
+        lotSize: { $ref: "#/components/schemas/BinanceRangeFilter" }
+        marketLotSize: { $ref: "#/components/schemas/BinanceRangeFilter" }
+        minNotional: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        multiplierUp: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        multiplierDown: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        maxNumOrders: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        maxNumAlgoOrders:
+          { type: integer, minimum: 0, maximum: 9007199254740991 }
+        unrecognizedFilterTypes:
+          type: array
+          maxItems: 64
+          items: { type: string, pattern: "^[A-Z0-9_]{1,40}$" }
     Decimal:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,12})?$'

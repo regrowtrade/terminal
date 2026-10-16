@@ -93,11 +93,18 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	if _, err := ring.Open(binding, envelope); err == nil {
 		t.Fatal("old keyring decrypted new envelope")
 	}
+	testReadSnapshotLifecycle(t, ctx, store, admin, runtimeURI, hash, id)
 	if _, err := ManageCredential(ctx, adminURI, "delete", id, "", nil, vault.Credentials{}); err != nil {
 		t.Fatal("could not remove encrypted credential")
 	}
 	if _, _, err := store.ReadAccountCredential(ctx, hash, id); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("deleted credential available")
+	}
+	if _, err := store.LatestReadSnapshot(ctx, hash, id); err != nil {
+		t.Fatal("key deletion removed historical evidence")
+	}
+	if err := store.SaveReadSnapshot(ctx, hash, id, syntheticReadSnapshot()); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("removed credential can still save readings")
 	}
 	if err := store.RevokeSession(ctx, hash, false); err != nil {
 		t.Fatal("could not revoke resource test session")

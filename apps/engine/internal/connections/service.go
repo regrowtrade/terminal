@@ -17,6 +17,8 @@ type State struct {
 type Store interface {
 	ListReadAccounts(context.Context, string) ([]database.ReadAccount, error)
 	ReadAccountCredential(context.Context, string, string) (vault.Binding, vault.Envelope, error)
+	SaveReadSnapshot(context.Context, string, string, binance.Snapshot) error
+	LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -46,5 +48,21 @@ func (s *Service) Snapshot(ctx context.Context, hash, account string) (binance.S
 	if err != nil {
 		return binance.Snapshot{}, vault.ErrVault
 	}
-	return s.Reader.Snapshot(ctx, credentials)
+	snapshot, err := s.Reader.Snapshot(ctx, credentials)
+	if err != nil {
+		return binance.Snapshot{}, err
+	}
+	if err := s.Store.SaveReadSnapshot(ctx, hash, account, snapshot); err != nil {
+		return binance.Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+// Historical recovery does not decrypt keys or make an external request, even
+// when live reading is disabled. It still requires session/ownership checks.
+func (s *Service) Latest(ctx context.Context, hash, account string) (database.StoredSnapshot, error) {
+	if s == nil || s.Store == nil {
+		return database.StoredSnapshot{}, ErrDisabled
+	}
+	return s.Store.LatestReadSnapshot(ctx, hash, account)
 }

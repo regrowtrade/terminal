@@ -24,6 +24,10 @@ func (f *fakeConnections) Snapshot(context.Context, string, string) (binance.Sna
 	f.calls++
 	return binance.Snapshot{}, f.err
 }
+func (f *fakeConnections) Latest(context.Context, string, string) (database.StoredSnapshot, error) {
+	f.calls++
+	return database.StoredSnapshot{}, f.err
+}
 func TestConnectionBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, token string
@@ -54,5 +58,21 @@ func TestConnectionBoundary(t *testing.T) {
 				t.Fatal("invalid request reached service")
 			}
 		})
+	}
+}
+func TestStoredSnapshotBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{{nil, 200}, {database.ErrSnapshotMissing, 404}, {database.ErrSessionInvalid, 401}, {database.ErrAccountMissing, 404}, {errors.New("private-driver-details"), 503}} {
+		service := &fakeConnections{err: tc.err}
+		r := httptest.NewRequest("POST", "/v1/connections/binance/latest", strings.NewReader(`{"tokenHash":"`+strings.Repeat("a", 64)+`","accountId":"00000000-0000-4000-8000-000000000001"}`))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
+		if w.Code != tc.status || service.calls != 1 || strings.Contains(w.Body.String(), "private-driver-details") || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("unsafe historical endpoint", w.Code)
+		}
 	}
 }
