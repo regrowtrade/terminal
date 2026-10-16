@@ -59,12 +59,16 @@ const env = {
   HOSTNAME: "127.0.0.1",
   PORT: String(webPort),
   DATABASE_REQUIRED: "false",
+  BINANCE_READ_ENABLED: "false",
+  BINANCE_EGRESS_CONFIRMED: "false",
   SESSION_BACKEND: "postgres",
 };
 delete env.DATABASE_URL;
 delete env.MIGRATION_DATABASE_URL;
 delete env.MIGRATIONS_DIR;
 delete env.TEST_DATABASE_URL;
+delete env.CREDENTIAL_KEYS_JSON;
+delete env.CREDENTIAL_ACTIVE_KEY_ID;
 // No production URLs: an explicit disposable loopback test server only.
 let admin;
 let setup;
@@ -263,6 +267,44 @@ try {
     assert.equal(plan.simulation, true);
     assert.equal(plan.levels[0].stopPrice, "98");
     assert.equal(plan.levels[0].takeProfit, "106");
+    const connections = await fetch(`${origin}/api/connections/binance/list`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        Cookie: setCookie.split(";")[0],
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    assert.equal(
+      connections.status,
+      200,
+      "Persisted session can read safe local metadata.",
+    );
+    assert.deepEqual(
+      await connections.json(),
+      { enabled: false, accounts: [] },
+      "Live reads must stay off in tests.",
+    );
+    const disabledSnapshot = await fetch(
+      `${origin}/api/connections/binance/snapshot`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          Cookie: setCookie.split(";")[0],
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountId: "00000000-0000-4000-8000-000000000001",
+        }),
+      },
+    );
+    assert.equal(
+      disabledSnapshot.status,
+      503,
+      "No exchange read can be triggered in this test environment.",
+    );
     const secondLogin = await fetch(`${origin}/api/auth/login`, {
       method: "POST",
       redirect: "manual",

@@ -41,6 +41,11 @@ export default defineRailway((ctx) => {
       DATABASE_REQUIRED: "true",
       // Never reference postgres.DATABASE_URL here: that is an admin credential.
       DATABASE_URL: preserve(),
+      // Absent/false by default. No exchange secrets or KEKs in web/migrator.
+      BINANCE_READ_ENABLED: preserve(),
+      BINANCE_EGRESS_CONFIRMED: preserve(),
+      CREDENTIAL_ACTIVE_KEY_ID: preserve(),
+      CREDENTIAL_KEYS_JSON: preserve(),
     },
   });
   const web = service("web", {

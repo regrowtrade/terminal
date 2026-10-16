@@ -90,6 +90,30 @@ test("position filters work and logout removes access", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
+test("settings keeps live access disabled for local sessions and never requests keys", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto("/settings");
+  await expect(
+    page.getByText("REST manual · Solo lectura · Sin órdenes"),
+  ).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "requieren sesiones PostgreSQL" }),
+  ).toContainText("requieren sesiones PostgreSQL");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("settings can revoke every existing session", async ({
   page,
   browser,

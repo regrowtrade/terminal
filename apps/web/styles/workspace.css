@@ -833,7 +833,31 @@ td small {
   gap: 22px;
 }
 .settings-card {
+  min-width: 0;
   padding: 0 24px 22px;
+}
+.binance-readonly .table-scroll {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+.binance-readonly table {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.binance-readonly caption {
+  white-space: normal;
+  text-align: left;
+  padding: 10px 0;
+}
+.binance-readonly select {
+  width: 100%;
+  margin: 12px 0;
+}
+.binance-readonly button {
+  margin-top: 12px;
+}
+.binance-readonly .exchange-row {
+  flex-wrap: wrap;
 }
 .settings-card .card-heading {
   padding: 22px 0;

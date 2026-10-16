@@ -14,7 +14,7 @@
 - Tokens del motor exclusivamente server-side; errores sanitizados, no logging de cuerpos o secretos.
 - CSP por petición con nonce de scripts; estilos inline permitidos por la UI. Sin unsafe-inline para scripts de producción. Frame denial, nosniff, restricciones de permisos y no-store en sesiones/API.
 - Motor privado por defecto, timeouts HTTP y cierre controlado.
-- No existe endpoint de ejecución ni formulario de API keys.
+- No existe endpoint de ejecución ni formulario de API keys. La herramienta administrativa provisiona credenciales HMAC por entrada oculta, cifradas por envolvente AES-256-GCM y ligadas a propietario/cuenta/entorno; el runtime solo tiene SELECT sobre el envelope. KEKs solo en motor/consola, no web/base. Ver [Binance solo lectura](binance-readonly.md).
 - Base PostgreSQL opcional en desarrollo local y obligatoria para acceso en producción: pool acotado, rechazo de roles administrativos/propietarios y comprobación de historial del esquema. `SET LOCAL app.user_id` se limita a la transacción; sesiones con RLS, sin endpoints de persistencia de planes aún.
 - Migraciones en proceso administrativo separado, sin credenciales de administración en servicios HTTP. Checksums, bloqueo y aplicación transaccional; no rollback destructivo automático.
 
@@ -24,7 +24,7 @@ Es acceso personal, no un sistema de identidad comercial. La contraseña sigue e
 
 `SESSION_BACKEND=local` solo está permitido fuera de producción: sesiones revocables en memoria, perdidas al reiniciar, sin auditoría durable. Producción usa `postgres` por defecto y rechaza explícitamente `local` o modos desconocidos. Una caída de base/motor bloquea acceso; nunca degrada a cookies stateless. Si logout no puede confirmar revocación devuelve 503 y conserva la cookie para reintentar, sin afirmar éxito. Solicitudes ya autorizadas pueden terminar tras una revocación; futuras operaciones financieras deberán verificar autorización junto a su transacción durable.
 
-Se persisten identidad personal, sesiones y eventos de sesión. No se guardan aún planes ni datos del exchange desde HTTP. Las tablas y el helper transaccional incorporan FKs/RLS; eso no sustituye la autorización de futuros endpoints. No hay cifrado de credenciales de exchange ni monitor de posiciones. El despliegue y las pruebas contra Railway están pendientes.
+Se persisten identidad personal, sesiones, eventos de sesión y envelopes de credenciales provisionadas administrativamente. No se guardan aún planes ni snapshots del exchange desde HTTP. Las tablas y el helper transaccional incorporan FKs/RLS; eso no sustituye la autorización de futuros endpoints. El adaptador Binance REST es solo lectura, manual, desactivado por defecto y sin validación real desde esta entrega; rechaza claves con trading/retiros/transferencias o sin IP restringida. No hay monitor continuo, reconciliación ni KMS administrado. El despliegue y las pruebas contra Railway están pendientes.
 
 ## Dependencias
 

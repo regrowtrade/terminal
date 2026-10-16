@@ -11,8 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"regrow/engine/internal/binance"
+	"regrow/engine/internal/connections"
 	"regrow/engine/internal/database"
 	"regrow/engine/internal/httpapi"
+	"regrow/engine/internal/vault"
 )
 
 func main() {
@@ -30,6 +33,11 @@ func main() {
 		os.Exit(1)
 	}
 	var store *database.Store
+	enabled := os.Getenv("BINANCE_READ_ENABLED")
+	if enabled != "" && enabled != "false" && enabled != "true" {
+		slog.Error("BINANCE_READ_ENABLED debe ser true o false")
+		os.Exit(1)
+	}
 	uri := os.Getenv("DATABASE_URL")
 	if uri == "" && os.Getenv("DATABASE_REQUIRED") == "true" {
 		slog.Error("PostgreSQL es obligatorio en este despliegue; configura DATABASE_URL con un rol limitado")
@@ -56,7 +64,23 @@ func main() {
 	}
 	server := httpapi.NewServer(address, token)
 	if store != nil {
-		server.Handler = httpapi.HandlerWithSessions(token, store.Ready, store)
+		service := &connections.Service{Store: store}
+		if enabled == "true" {
+			if os.Getenv("BINANCE_EGRESS_CONFIRMED") != "true" {
+				slog.Error("Confirma región permitida e IP de salida fija restringida antes de habilitar lectura")
+				os.Exit(1)
+			}
+			keys, err := vault.New(os.Getenv("CREDENTIAL_ACTIVE_KEY_ID"), os.Getenv("CREDENTIAL_KEYS_JSON"))
+			if err != nil {
+				slog.Error("Configura el keyring de credenciales solo en el motor")
+				os.Exit(1)
+			}
+			service.Vault, service.Reader = keys, binance.New()
+		}
+		server.Handler = httpapi.HandlerWithConnections(token, store.Ready, store, service)
+	} else if enabled == "true" {
+		slog.Error("La lectura Binance requiere PostgreSQL")
+		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

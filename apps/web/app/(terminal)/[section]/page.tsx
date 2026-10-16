@@ -19,6 +19,7 @@ import { Planner } from "@/components/planner";
 import { PlanButton } from "@/components/workspace";
 import { requireOwner } from "@/lib/auth";
 import { sessionBackend } from "@/lib/sessions";
+import { BinanceConnection } from "@/components/binance-connection";
 
 export default async function Section({
   params,
@@ -191,14 +192,7 @@ export default async function Section({
               <h2>Conexiones de exchange</h2>
               <KeyRound size={18} />
             </div>
-            <div className="exchange-row">
-              <span className="exchange-icon binance">B</span>
-              <div>
-                <strong>Binance Futures</strong>
-                <small>Adaptador aún no implementado</small>
-              </div>
-              <span className="pill muted">NO CONECTADO</span>
-            </div>
+            <BinanceConnection />
             <div className="exchange-row">
               <span className="exchange-icon bybit">B</span>
               <div>
@@ -208,8 +202,8 @@ export default async function Section({
               <span className="pill muted">NO CONECTADO</span>
             </div>
             <p className="muted-copy">
-              No introduzcas API keys: esta versión no almacena credenciales de
-              exchanges.
+              No introduzcas API keys en el navegador. Bybit aún no está
+              implementado.
             </p>
           </section>
           <section className="card settings-card full-span">
