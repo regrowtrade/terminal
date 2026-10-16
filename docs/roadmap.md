@@ -12,17 +12,17 @@
 
 ## 0.2 — Datos reales, solo lectura
 
-Infraestructura, sesiones y credenciales/lectura fueron revisadas en los PRs #1–#3, destinados a Railway Hobby, uso personal y Binance Futures USDT. Los merges encadenados dejaron sesiones y credenciales fuera de `main`; su consolidación está preparada en `chore/consolidate-approved-deliveries` (ver [control de versiones](version-control.md)). No es todavía una entrega 0.2 completa ni un despliegue validado.
+Infraestructura, sesiones y credenciales/lectura fueron revisadas en los PRs #1–#3, destinados a Railway Hobby, uso personal y Binance Futures USDT, y ya están consolidadas en `main` mediante el PR #4. El PR #5 amplía la lectura con órdenes/filtros y persistencia de la última captura (ver [control de versiones](version-control.md)). No es todavía una entrega 0.2 completa ni un despliegue validado.
 
 - [x] Definición Railway versionada, imágenes web/motor sin root y comunicación privada.
 - [x] Runner administrativo de migraciones, checksums, bloqueo y comprobación de rol/esquema en el motor.
 - [x] Pruebas PostgreSQL/RLS y builds de contenedor definidos como puertas de CI.
 - [ ] Despliegue aprobado y comprobado en Railway; backups/restauración verificados.
 - [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
-- [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas y revisadas en el PR #2 (consolidación en `main` y despliegue pendientes).
+- [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas y revisadas en el PR #2, consolidadas en `main` con el PR #4 (despliegue pendiente).
 - [ ] Consumo efectivo de datos de cuentas/planes propios en las vistas.
-- [x] En el PR #3: envelopes cifrados con rotación administrativa y RLS, control de permisos/IP y panel manual de saldos/posiciones Binance USDT. Consolidación en `main` pendiente. Desactivado por defecto, sin claves reales ni despliegue verificado; no equivale a sincronización continua.
-- [x] En `feat/binance-market-orders`: catálogo/filtros de perpetuos USDT y listas completas de órdenes abiertas normales/algo integrados en la lectura manual. Revisión, integración y validación operativa pendientes; no confirma protección ni reconcilia fills.
+- [x] En el PR #3, consolidado en `main` con el PR #4: envelopes cifrados con rotación administrativa y RLS, control de permisos/IP y panel manual de saldos/posiciones Binance USDT. Desactivado por defecto, sin claves reales ni despliegue verificado; no equivale a sincronización continua.
+- [x] En el PR #5 (`feat/binance-market-orders`): catálogo/filtros de perpetuos USDT y listas completas de órdenes abiertas normales/algo integrados en la lectura manual. Revisión, integración y validación operativa pendientes; no confirma protección ni reconcilia fills.
 - [x] En la misma rama: última lectura completa por cuenta persistida con RLS, protección contra sobrescritura fuera de orden, revalidación de sesión al guardar y recuperación histórica explícita sin contactar al exchange. Migración `0004_read_snapshots.sql`; no aplicada a Railway por el agente.
 - [ ] Eventos privados, reconexión y reconciliación de snapshots/fills; reemplazo de fixtures en las vistas conectadas.
 
