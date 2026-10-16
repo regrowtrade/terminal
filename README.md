@@ -13,15 +13,16 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 - Presupuesto en USDT o porcentaje de una base manual explícita (saldo/equity).
 - Nuevo resultado neto de referencia en cada cálculo: realizado + flotante de ambos lados − comisiones + funding.
 - Cálculo de exposición tras cierres parciales probado unitariamente; el HTTP preview muestra escenarios por nivel completo.
-- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. Identidad personal, sesiones revocables y auditoría de sesiones persistidas; planes y cuentas todavía pendientes.
+- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. Identidad personal, sesiones revocables, auditoría, cuentas provisionadas y última lectura manual del exchange persistidas; planes todavía pendientes.
 - Imágenes web/motor para Railway y definición IaC versionada; no desplegadas desde esta entrega.
-- Credenciales cifradas por envolvente y CLI administrativo con entrada oculta; panel manual de saldos/posiciones Binance Futures USDT en Configuración, solo lectura y desactivado por defecto. [Habilitación, permisos y límites](docs/binance-readonly.md).
+- Credenciales cifradas por envolvente y CLI administrativo con entrada oculta; panel manual de saldos/posiciones, órdenes abiertas normales/condicionales y catálogo/filtros de perpetuos Binance USDT en Configuración, solo lectura y desactivado por defecto. IDs int64 como texto, precios/cantidades decimales e intervalo de observación explícito. [Habilitación, permisos y límites](docs/binance-readonly.md).
+- Guardado de la última lectura completa por cuenta con RLS y revalidación de sesión tras la consulta; recuperación manual desde PostgreSQL marcada como **guardada, no actual**, incluso con el lector externo desactivado. No es un historial de fills ni un checkpoint de reconciliación.
 
 ## Qué NO funciona todavía
 
 No hay órdenes reales, monitor continuo, reconciliación, journal persistido, Bybit, migración de usuarios antiguos, Telegram, facturación ni autenticación multiusuario. Binance REST manual está implementado pero desactivado y no validado con claves reales por el agente; no se ha conectado ninguna cuenta. PostgreSQL debe configurarse explícitamente; las migraciones se aplican mediante un trabajo administrativo separado, nunca automáticamente al arrancar HTTP. Las vistas ilustrativas conservan fixtures; solo el panel de lectura, después de habilitarlo, puede mostrar respuestas de una cuenta conectada.
 
-La vista previa no valida liquidación, filtros de instrumentos, liquidez ni disponibilidad de margen del exchange. No debe utilizarse como una instrucción ejecutable. Los cálculos de margen son aproximaciones de nocional/apalancamiento.
+La vista previa no valida liquidación, filtros de instrumentos, liquidez ni disponibilidad de margen del exchange. El catálogo del panel de lectura es informativo y no convierte la simulación en una orden validada. No debe utilizarse como una instrucción ejecutable. Los cálculos de margen son aproximaciones de nocional/apalancamiento.
 
 ## Arranque local en Windows
 

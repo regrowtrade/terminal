@@ -17,6 +17,12 @@ func (s deniedStore) ListReadAccounts(context.Context, string) ([]database.ReadA
 func (s deniedStore) ReadAccountCredential(context.Context, string, string) (vault.Binding, vault.Envelope, error) {
 	return vault.Binding{}, vault.Envelope{}, s.err
 }
+func (s deniedStore) SaveReadSnapshot(context.Context, string, string, binance.Snapshot) error {
+	return s.err
+}
+func (s deniedStore) LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error) {
+	return database.StoredSnapshot{}, s.err
+}
 
 type neverReader struct{ t *testing.T }
 
@@ -39,5 +45,14 @@ func TestDisabledOrUnauthorizedCannotDecryptOrRead(t *testing.T) {
 	s.Store = deniedStore{}
 	if _, err := s.Snapshot(context.Background(), "forged", "account"); !errors.Is(err, vault.ErrVault) {
 		t.Fatal("malformed envelope was accepted")
+	}
+}
+func TestHistoricalReadsStillRequireAuthorizationWithoutVault(t *testing.T) {
+	s := &Service{Store: deniedStore{err: database.ErrSessionInvalid}, Reader: neverReader{t}}
+	if _, err := s.Latest(context.Background(), "forged", "account"); !errors.Is(err, database.ErrSessionInvalid) {
+		t.Fatal("history bypassed session")
+	}
+	if _, err := (*Service)(nil).Latest(context.Background(), "forged", "account"); !errors.Is(err, ErrDisabled) {
+		t.Fatal("missing store accepted")
 	}
 }

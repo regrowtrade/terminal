@@ -16,10 +16,11 @@ import (
 type ConnectionService interface {
 	State(context.Context, string) (connections.State, error)
 	Snapshot(context.Context, string, string) (binance.Snapshot, error)
+	Latest(context.Context, string, string) (database.StoredSnapshot, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {
-	for _, operation := range []string{"list", "snapshot"} {
+	for _, operation := range []string{"list", "snapshot", "latest"} {
 		mux.HandleFunc("POST /v1/connections/binance/"+operation, func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r, token) {
 				respond(w, 401, map[string]string{"error": "No autorizado"})
@@ -37,7 +38,7 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 			}
 			d := json.NewDecoder(r.Body)
 			d.DisallowUnknownFields()
-			if d.Decode(&input) != nil || d.Decode(&struct{}{}) != io.EOF || len(input.TokenHash) != 64 || strings.Trim(input.TokenHash, "0123456789abcdef") != "" || (operation == "list" && input.AccountID != "") || (operation == "snapshot" && input.AccountID == "") {
+			if d.Decode(&input) != nil || d.Decode(&struct{}{}) != io.EOF || len(input.TokenHash) != 64 || strings.Trim(input.TokenHash, "0123456789abcdef") != "" || (operation == "list" && input.AccountID != "") || (operation != "list" && input.AccountID == "") {
 				respond(w, 400, map[string]string{"error": "Solicitud inválida"})
 				return
 			}
@@ -51,6 +52,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 			var err error
 			if operation == "list" {
 				data, err = service.State(ctx, input.TokenHash)
+			} else if operation == "latest" {
+				data, err = service.Latest(ctx, input.TokenHash, input.AccountID)
 			} else {
 				data, err = service.Snapshot(ctx, input.TokenHash, input.AccountID)
 			}
@@ -59,6 +62,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				respond(w, 401, map[string]string{"error": "Sesión no válida"})
 			case errors.Is(err, database.ErrAccountMissing):
 				respond(w, 404, map[string]string{"error": "Cuenta no disponible"})
+			case errors.Is(err, database.ErrSnapshotMissing):
+				respond(w, 404, map[string]string{"error": database.ErrSnapshotMissing.Error()})
 			case errors.Is(err, binance.ErrPermissions):
 				respond(w, 422, map[string]string{"error": binance.ErrPermissions.Error()})
 			case errors.Is(err, binance.ErrRateLimited):

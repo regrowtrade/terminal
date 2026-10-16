@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { BinanceMarketData } from "./binance-market-data";
 import {
   connectionStateSchema,
   snapshotSchema,
+  storedSnapshotSchema,
   type ConnectionState,
   type AccountSnapshot,
 } from "@/lib/connections-schema";
@@ -16,6 +18,7 @@ export function BinanceConnection() {
   const [busy, setBusy] = useState(false);
   const [age, setAge] = useState(0);
   const [receivedAt, setReceivedAt] = useState(0);
+  const [storedAt, setStoredAt] = useState<string | null>(null);
   useEffect(() => {
     if (!snapshot) return;
     const tick = () =>
@@ -24,11 +27,12 @@ export function BinanceConnection() {
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [snapshot, receivedAt]);
-  async function load(operation: "list" | "snapshot") {
+  async function load(operation: "list" | "snapshot" | "latest") {
     if (busy) return;
     setBusy(true);
     setError("");
     setSnapshot(null);
+    setStoredAt(null);
     try {
       const response = await fetch(`/api/connections/binance/${operation}`, {
         method: "POST",
@@ -55,6 +59,11 @@ export function BinanceConnection() {
         const next = connectionStateSchema.parse(body);
         setState(next);
         setSelected(next.accounts[0]?.id ?? "");
+      } else if (operation === "latest") {
+        const stored = storedSnapshotSchema.parse(body);
+        setSnapshot(stored.snapshot);
+        setStoredAt(stored.storedAt);
+        setReceivedAt(performance.now());
       } else {
         setSnapshot(snapshotSchema.parse(body));
         setReceivedAt(performance.now());
@@ -73,7 +82,7 @@ export function BinanceConnection() {
         <span className="exchange-icon binance">B</span>
         <div>
           <strong>Binance Futures USDT</strong>
-          <small>REST manual · Solo lectura · Sin órdenes</small>
+          <small>REST manual · Solo lectura · Sin ejecución</small>
         </div>
         <span className="pill muted">
           {state?.enabled
@@ -103,7 +112,7 @@ export function BinanceConnection() {
       {state?.enabled && state.accounts.length === 0 && (
         <p role="status">No hay credenciales provisionadas.</p>
       )}
-      {state?.enabled && state.accounts.length > 0 && (
+      {state && state.accounts.length > 0 && (
         <div>
           <label htmlFor="binance-account">Cuenta de lectura</label>
           <select
@@ -112,6 +121,7 @@ export function BinanceConnection() {
             onChange={(e) => {
               setSelected(e.target.value);
               setSnapshot(null);
+              setStoredAt(null);
               setError("");
             }}
             disabled={busy}
@@ -125,10 +135,18 @@ export function BinanceConnection() {
           <button
             className="button secondary"
             type="button"
-            disabled={busy || !selected}
+            disabled={busy || !selected || !state.enabled}
             onClick={() => void load("snapshot")}
           >
-            Consultar saldos y posiciones
+            Consultar cuenta y órdenes
+          </button>
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busy || !selected}
+            onClick={() => void load("latest")}
+          >
+            Mostrar última lectura guardada
           </button>
         </div>
       )}
@@ -140,14 +158,34 @@ export function BinanceConnection() {
       {snapshot && (
         <section aria-label="Lectura de Binance">
           <p role="status">
-            {age >= 30 ? "LECTURA ANTIGUA" : "LECTURA PUNTUAL"} · Recibido hace{" "}
-            {age} s · {new Date(snapshot.capturedAt).toLocaleString("es")}
+            {storedAt
+              ? "LECTURA GUARDADA · NO ACTUAL"
+              : age >= 30
+                ? "LECTURA ANTIGUA"
+                : "LECTURA PUNTUAL"}{" "}
+            · Recibido hace {age} s ·{" "}
+            {new Date(snapshot.capturedAt).toLocaleString("es")}
+          </p>
+          {storedAt && (
+            <p className="notice danger">
+              Recuperada de PostgreSQL; guardada el{" "}
+              {new Date(storedAt).toLocaleString("es")}. No se contactó a
+              Binance y no se verificó el estado actual de la cuenta.
+            </p>
+          )}
+          <p className="muted-copy">
+            Consultas REST no atómicas, sin sincronización continua. Incluye
+            saldos, posiciones, órdenes normales/condicionales e instrumentos.
+            No confirma protección ni disponibilidad para ejecutar. Esta lectura
+            no alimenta automáticamente el planificador; las otras vistas siguen
+            siendo ilustrativas.
           </p>
           <p className="muted-copy">
-            Consultas REST no atómicas, sin sincronización continua ni órdenes
-            normales/condicionales. No confirma protección ni disponibilidad
-            para ejecutar. Esta lectura no alimenta automáticamente el
-            planificador; las otras vistas siguen siendo ilustrativas.
+            Inicio de lectura:{" "}
+            {new Date(snapshot.startedAt).toLocaleString("es")} · Fin de
+            lectura: {new Date(snapshot.capturedAt).toLocaleString("es")}. La
+            antigüedad de cada dato puede ser mayor que el tiempo desde la
+            recepción.
           </p>
           <div className="table-scroll">
             <table>
@@ -209,6 +247,7 @@ export function BinanceConnection() {
               de órdenes ni protección verificada.
             </p>
           )}
+          <BinanceMarketData key={snapshot.capturedAt} snapshot={snapshot} />
         </section>
       )}
     </div>

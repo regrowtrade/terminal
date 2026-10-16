@@ -15,7 +15,9 @@ vi.mock("@/lib/sessions", async (original) => ({
 }));
 import { POST as list } from "@/app/api/connections/binance/list/route";
 import { POST as snapshot } from "@/app/api/connections/binance/snapshot/route";
+import { POST as latest } from "@/app/api/connections/binance/latest/route";
 import { sessionDigest } from "@/lib/sessions";
+import { syntheticSnapshot } from "./fixtures/binance";
 
 beforeEach(() => {
   mocks.authenticated.mockResolvedValue(true);
@@ -120,4 +122,58 @@ it("does not forward exchange/driver errors to the browser", async () => {
   const response = await list(request());
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain("signed-url-and-private-key");
+});
+it("proxies all read-only snapshot components without converting int64 IDs", async () => {
+  const body = syntheticSnapshot();
+  const fetch = vi.fn().mockResolvedValue(Response.json(body));
+  vi.stubGlobal("fetch", fetch);
+  const response = await snapshot(
+    request({ accountId: "00000000-0000-4000-8000-000000000001" }),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(body);
+});
+it("does not return a partial snapshot if the engine omits algo orders", async () => {
+  const { algoOrders: _omitted, ...body } = syntheticSnapshot();
+  void _omitted;
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  const response = await snapshot(
+    request({ accountId: "00000000-0000-4000-8000-000000000001" }),
+  );
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain("100.00000001");
+});
+it("only recovers saved snapshots through the authenticated private latest endpoint", async () => {
+  const body = {
+    snapshot: syntheticSnapshot(),
+    storedAt: new Date().toISOString(),
+  };
+  const fetch = vi.fn().mockResolvedValue(Response.json(body));
+  vi.stubGlobal("fetch", fetch);
+  const response = await latest(
+    request({ accountId: "00000000-0000-4000-8000-000000000001" }),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(body);
+  expect(fetch.mock.calls[0][0].pathname).toBe(
+    "/v1/connections/binance/latest",
+  );
+});
+it("does not recover saved data for anonymous users or allow owner injection", async () => {
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  mocks.authenticated.mockResolvedValue(false);
+  expect((await latest(request())).status).toBe(401);
+  mocks.authenticated.mockResolvedValue(true);
+  expect(
+    (
+      await latest(
+        request({
+          accountId: "00000000-0000-4000-8000-000000000001",
+          ownerId: "attacker",
+        }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(fetch).not.toHaveBeenCalled();
 });
