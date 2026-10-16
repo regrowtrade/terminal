@@ -1,9 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 
-const testPassword = "e2e-only-private-password-never-deploy";
-const testSecret = "e2e-only-session-secret-never-deploy-123456";
-const engineToken = "e2e-only-engine-token-never-deploy-123456";
+const testPassword = (process.env.REGROW_E2E_PASSWORD ??=
+  randomBytes(48).toString("base64"));
+const testSecret = randomBytes(48).toString("base64");
+const engineToken = randomBytes(48).toString("base64");
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -30,7 +32,16 @@ export default defineConfig({
       command: "go run ./cmd/engine",
       cwd: fileURLToPath(new URL("../engine", import.meta.url)),
       url: "http://127.0.0.1:8081/healthz",
-      env: { ENGINE_API_TOKEN: engineToken, ENGINE_ADDRESS: "127.0.0.1:8081" },
+      env: {
+        ENGINE_API_TOKEN: engineToken,
+        ENGINE_ADDRESS: "127.0.0.1:8081",
+        DATABASE_URL: "",
+        DATABASE_REQUIRED: "false",
+        BINANCE_READ_ENABLED: "false",
+        BINANCE_EGRESS_CONFIRMED: "false",
+        CREDENTIAL_KEYS_JSON: "",
+        CREDENTIAL_ACTIVE_KEY_ID: "",
+      },
       reuseExistingServer: false,
       timeout: 120_000,
     },
@@ -43,6 +54,7 @@ export default defineConfig({
         ENGINE_API_TOKEN: engineToken,
         ENGINE_URL: "http://127.0.0.1:8081",
         APP_ORIGIN: "http://localhost:3100",
+        SESSION_BACKEND: "local",
       },
       reuseExistingServer: false,
       timeout: 120_000,

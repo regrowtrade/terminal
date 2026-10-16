@@ -21,6 +21,7 @@
     "node": ">=22.0.0"
   },
   "devDependencies": {
+    "pg": "8.23.1",
     "railway": "3.16.0"
   }
 }

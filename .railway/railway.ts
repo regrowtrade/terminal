@@ -41,6 +41,11 @@ export default defineRailway((ctx) => {
       DATABASE_REQUIRED: "true",
       // Never reference postgres.DATABASE_URL here: that is an admin credential.
       DATABASE_URL: preserve(),
+      // Absent/false by default. No exchange secrets or KEKs in web/migrator.
+      BINANCE_READ_ENABLED: preserve(),
+      BINANCE_EGRESS_CONFIRMED: preserve(),
+      CREDENTIAL_ACTIVE_KEY_ID: preserve(),
+      CREDENTIAL_KEYS_JSON: preserve(),
     },
   });
   const web = service("web", {
@@ -60,6 +65,7 @@ export default defineRailway((ctx) => {
       SESSION_SECRET: ctx.shared.SESSION_SECRET,
       ENGINE_API_TOKEN: ctx.shared.ENGINE_API_TOKEN,
       ENGINE_URL: "http://${{engine.RAILWAY_PRIVATE_DOMAIN}}:8080",
+      SESSION_BACKEND: "postgres",
     },
   });
   return project("regrow-terminal", { resources: [db, migrator, engine, web] });

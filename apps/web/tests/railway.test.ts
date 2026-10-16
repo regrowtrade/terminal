@@ -34,6 +34,14 @@ it("keeps admin credentials out of the HTTP services and declares reviewed sourc
   expect(engine).not.toHaveProperty("variables.MIGRATION_DATABASE_URL");
   expect(web).not.toHaveProperty("variables.DATABASE_URL");
   expect(web).not.toHaveProperty("variables.MIGRATION_DATABASE_URL");
+  expect(web).not.toHaveProperty("variables.CREDENTIAL_KEYS_JSON");
+  expect(migrator).not.toHaveProperty("variables.CREDENTIAL_KEYS_JSON");
+  expect(engine).toMatchObject({
+    variables: {
+      BINANCE_READ_ENABLED: { type: "preserve" },
+      CREDENTIAL_KEYS_JSON: { type: "preserve" },
+    },
+  });
   expect(migrator).toMatchObject({
     deploy: {
       startCommand: "/usr/local/bin/migrate",

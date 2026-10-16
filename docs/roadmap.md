@@ -12,14 +12,17 @@
 
 ## 0.2 — Datos reales, solo lectura
 
-Primera rama en revisión: `feat/railway-foundation`, destinada a Railway Hobby, uso personal y Binance Futures USDT. No es todavía una entrega 0.2 completa.
+Infraestructura, sesiones y credenciales/lectura fueron revisadas en los PRs #1–#3, destinados a Railway Hobby, uso personal y Binance Futures USDT. Los merges encadenados dejaron sesiones y credenciales fuera de `main`; su consolidación está preparada en `chore/consolidate-approved-deliveries` (ver [control de versiones](version-control.md)). No es todavía una entrega 0.2 completa ni un despliegue validado.
 
 - [x] Definición Railway versionada, imágenes web/motor sin root y comunicación privada.
 - [x] Runner administrativo de migraciones, checksums, bloqueo y comprobación de rol/esquema en el motor.
 - [x] Pruebas PostgreSQL/RLS y builds de contenedor definidos como puertas de CI.
 - [ ] Despliegue aprobado y comprobado en Railway; backups/restauración verificados.
 - [ ] Resolver IP de salida fija antes de activar claves de trading (Hobby no incluye esta función).
-- [ ] Identidad persistida, sesiones revocables y consumo efectivo de datos propios en las vistas.
+- [x] Identidad personal persistida, sesiones revocables y auditoría de sesiones implementadas y revisadas en el PR #2 (consolidación en `main` y despliegue pendientes).
+- [ ] Consumo efectivo de datos de cuentas/planes propios en las vistas.
+- [x] En el PR #3: envelopes cifrados con rotación administrativa y RLS, control de permisos/IP y panel manual de saldos/posiciones Binance USDT. Consolidación en `main` pendiente. Desactivado por defecto, sin claves reales ni despliegue verificado; no equivale a sincronización continua.
+- [ ] Instrumentos/filtros, órdenes normales/algo, snapshots persistidos y eventos privados reconciliados; reemplazo de fixtures en las vistas conectadas.
 
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
 2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.

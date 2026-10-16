@@ -15,6 +15,8 @@ export default async function Login({
   const messages: Record<string, string> = {
     invalid: "No se pudo iniciar sesión. Revisa tu contraseña.",
     limited: "Demasiados intentos. Vuelve a intentarlo en cinco minutos.",
+    unavailable:
+      "El servicio de sesiones no está disponible o alcanzó su límite. Revisa el motor y PostgreSQL antes de reintentar.",
     configuration:
       "Configura los secretos del servidor antes de iniciar sesión.",
   };
