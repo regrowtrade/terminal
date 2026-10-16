@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { BinanceMarketData } from "./binance-market-data";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { BinanceAccountData } from "./binance-account-data";
 import {
   connectionStateSchema,
   snapshotSchema,
@@ -10,7 +10,16 @@ import {
   type AccountSnapshot,
 } from "@/lib/connections-schema";
 
+const subscribeToHydration = () => () => {};
+
 export function BinanceConnection() {
+  // SSR buttons must stay disabled until their client handlers are installed.
+  // Otherwise an early click can be lost before React hydrates this panel.
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const [state, setState] = useState<ConnectionState | null>(null);
   const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(null);
   const [selected, setSelected] = useState("");
@@ -19,6 +28,8 @@ export function BinanceConnection() {
   const [age, setAge] = useState(0);
   const [receivedAt, setReceivedAt] = useState(0);
   const [storedAt, setStoredAt] = useState<string | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRequest.current?.abort(), []);
   useEffect(() => {
     if (!snapshot) return;
     const tick = () =>
@@ -28,23 +39,47 @@ export function BinanceConnection() {
     return () => clearInterval(timer);
   }, [snapshot, receivedAt]);
   async function load(operation: "list" | "snapshot" | "latest") {
-    if (busy) return;
+    if (
+      !hydrated ||
+      activeRequest.current ||
+      (operation !== "list" &&
+        (!selected || !state?.accounts.some((a) => a.id === selected))) ||
+      (operation === "snapshot" && !state?.enabled)
+    )
+      return;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(22_000),
+    ]);
+    activeRequest.current = controller;
     setBusy(true);
     setError("");
     setSnapshot(null);
     setStoredAt(null);
+    if (operation === "list") {
+      setState(null);
+      setSelected("");
+    }
     try {
       const response = await fetch(`/api/connections/binance/${operation}`, {
         method: "POST",
         cache: "no-store",
         redirect: "error",
+        signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           operation === "list" ? {} : { accountId: selected },
         ),
       });
       const body: unknown = await response.json();
+      if (controller.signal.aborted) return;
+      signal.throwIfAborted();
       if (!response.ok) {
+        if (response.status === 401) {
+          setState(null);
+          setSelected("");
+        }
         setError(
           typeof body === "object" &&
             body !== null &&
@@ -69,15 +104,19 @@ export function BinanceConnection() {
         setReceivedAt(performance.now());
       }
     } catch {
+      if (controller.signal.aborted) return;
       setError(
         "No se pudo leer la cuenta. No se muestran datos anteriores como actuales.",
       );
     } finally {
-      setBusy(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setBusy(false);
+      }
     }
   }
   return (
-    <div className="binance-readonly">
+    <div className="binance-readonly" aria-busy={busy}>
       <div className="exchange-row">
         <span className="exchange-icon binance">B</span>
         <div>
@@ -98,7 +137,7 @@ export function BinanceConnection() {
       <button
         className="button secondary"
         type="button"
-        disabled={busy}
+        disabled={!hydrated || busy}
         onClick={() => void load("list")}
       >
         {busy ? "Consultando…" : "Comprobar conexión"}
@@ -109,7 +148,7 @@ export function BinanceConnection() {
           Binance.
         </p>
       )}
-      {state?.enabled && state.accounts.length === 0 && (
+      {state && state.accounts.length === 0 && (
         <p role="status">No hay credenciales provisionadas.</p>
       )}
       {state && state.accounts.length > 0 && (
@@ -177,8 +216,8 @@ export function BinanceConnection() {
             Consultas REST no atómicas, sin sincronización continua. Incluye
             saldos, posiciones, órdenes normales/condicionales e instrumentos.
             No confirma protección ni disponibilidad para ejecutar. Esta lectura
-            no alimenta automáticamente el planificador; las otras vistas siguen
-            siendo ilustrativas.
+            no alimenta automáticamente el planificador. Dashboard, calculadora
+            y ejemplos siguen separados de estos datos de cuenta.
           </p>
           <p className="muted-copy">
             Inicio de lectura:{" "}
@@ -187,67 +226,10 @@ export function BinanceConnection() {
             antigüedad de cada dato puede ser mayor que el tiempo desde la
             recepción.
           </p>
-          <div className="table-scroll">
-            <table>
-              <caption>Saldos por activo (no sumar monedas distintas)</caption>
-              <thead>
-                <tr>
-                  <th>Activo</th>
-                  <th>Saldo</th>
-                  <th>Disponible</th>
-                  <th>PnL flotante</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.assets.map((a) => (
-                  <tr key={a.asset}>
-                    <td>{a.asset}</td>
-                    <td>{a.walletBalance}</td>
-                    <td>{a.availableBalance}</td>
-                    <td>{a.unrealizedProfit}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="table-scroll">
-            <table>
-              <caption>
-                Posiciones USDT · Cantidades y precios decimales
-              </caption>
-              <thead>
-                <tr>
-                  <th>Activo / lado</th>
-                  <th>Cantidad</th>
-                  <th>Entrada</th>
-                  <th>Marca</th>
-                  <th>PnL flotante</th>
-                  <th>Liquidación estimada</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.positions.map((p) => (
-                  <tr key={`${p.symbol}:${p.positionSide}`}>
-                    <td>
-                      {p.symbol} · {p.positionSide}
-                    </td>
-                    <td>{p.positionAmt}</td>
-                    <td>{p.entryPrice}</td>
-                    <td>{p.markPrice}</td>
-                    <td>{p.unRealizedProfit}</td>
-                    <td>{p.liquidationPrice}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {snapshot.positions.length === 0 && (
-            <p>
-              No hay posiciones devueltas por esta consulta; no implica ausencia
-              de órdenes ni protección verificada.
-            </p>
-          )}
-          <BinanceMarketData key={snapshot.capturedAt} snapshot={snapshot} />
+          <BinanceAccountData
+            key={`${selected}:${snapshot.capturedAt}`}
+            snapshot={snapshot}
+          />
         </section>
       )}
     </div>

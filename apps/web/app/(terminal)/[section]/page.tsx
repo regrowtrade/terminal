@@ -14,7 +14,7 @@ import {
   Unplug,
   Wallet,
 } from "lucide-react";
-import { Positions } from "@/components/positions";
+import { PositionsWorkspace } from "@/components/positions-workspace";
 import { Planner } from "@/components/planner";
 import { PlanButton } from "@/components/workspace";
 import { requireOwner } from "@/lib/auth";
@@ -34,16 +34,9 @@ export default async function Section({
         <Heading
           eyebrow="EXPOSICIÓN EN UN SOLO LUGAR"
           title="Cada lado. Toda la perspectiva."
-          description="Explora la tabla con datos sintéticos. La sincronización real con Binance y Bybit aún no está habilitada."
+          description="Consulta posiciones y órdenes Binance en modo de solo lectura, o explora ejemplos en un espacio separado. Sin sincronización continua ni ejecución."
         />
-        <div className="notice">
-          <Unplug size={18} />
-          <span>
-            No hay cuentas conectadas. Los precios y cantidades siguientes son
-            ficticios.
-          </span>
-        </div>
-        <Positions full />
+        <PositionsWorkspace />
       </>
     );
   if (section === "strategies")
@@ -129,8 +122,9 @@ export default async function Section({
           <span className="eyebrow">UNA HISTORIA TODAVÍA POR ESCRIBIR</span>
           <h2>Aún no hay operaciones registradas.</h2>
           <p>
-            Esta entrega no conecta exchanges ni guarda planes. Las vistas
-            previas de la calculadora no se convierten en trades.
+            La lectura manual de Binance no importa fills al journal ni guarda
+            planes. Las vistas previas de la calculadora no se convierten en
+            trades.
           </p>
           <PlanButton>
             Explorar una entrada <ArrowRight size={16} />

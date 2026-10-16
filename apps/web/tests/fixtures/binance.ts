@@ -78,3 +78,51 @@ export function syntheticSnapshot(): AccountSnapshot {
     ],
   };
 }
+
+export function syntheticAccountSnapshot(): AccountSnapshot {
+  const result = syntheticSnapshot();
+  result.positions = [
+    {
+      symbol: "BTCUSDT",
+      positionSide: "LONG",
+      positionAmt: "1.000000000000000001",
+      entryPrice: "100.00000001",
+      markPrice: "101",
+      unRealizedProfit: "0.99999999",
+      liquidationPrice: "50",
+    },
+    {
+      symbol: "BTCUSDT",
+      positionSide: "SHORT",
+      positionAmt: "-2.000000000000000001",
+      entryPrice: "110",
+      markPrice: "101",
+      unRealizedProfit: "18",
+      liquidationPrice: "150",
+    },
+    {
+      symbol: "ETHUSDT",
+      positionSide: "BOTH",
+      positionAmt: "0",
+      entryPrice: "0",
+      markPrice: "2",
+      unRealizedProfit: "0",
+      liquidationPrice: "0",
+    },
+  ];
+  result.instruments.push({
+    ...result.instruments[0],
+    symbol: "ETHUSDT",
+    baseAsset: "ETH",
+  });
+  result.openOrders.push({
+    ...result.openOrders[0],
+    symbol: "ETHUSDT",
+    positionSide: "BOTH",
+    orderId: "9007199254740997",
+    clientOrderId: "synthetic-one-way",
+    status: "NEW",
+    executedQty: "0",
+  });
+  return result;
+}

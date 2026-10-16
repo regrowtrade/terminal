@@ -68,7 +68,7 @@ export function Workspace({
             </span>
             <span>
               <strong>Mi workspace</strong>
-              <small>Personal · Simulación</small>
+              <small>Personal · Sin ejecución</small>
             </span>
             <ChevronDown size={15} />
           </div>
@@ -107,8 +107,9 @@ export function Workspace({
             </button>
             {help && (
               <p className="help-copy">
-                Los ejemplos son ficticios. «Nuevo plan» consulta al motor Go
-                para calcular escenarios. Ningún botón ejecuta órdenes ni guarda
+                Los ejemplos son ficticios y están separados de las lecturas
+                manuales de cuenta. «Nuevo plan» consulta al motor Go para
+                calcular escenarios. Ningún botón ejecuta órdenes ni guarda
                 operaciones.
               </p>
             )}
@@ -163,8 +164,9 @@ export function Workspace({
           <div className="demo-strip">
             <FlaskConical size={14} />
             <span>
-              Entorno de simulación. Datos ilustrativos; no hay cuentas de
-              exchange conectadas.
+              Sin ejecución real. Calculadora y dashboard de simulación;
+              Posiciones y Configuración permiten lecturas Binance explícitas,
+              no sincronizadas.
             </span>
           </div>
           <main id="main-content" className="main-content">
