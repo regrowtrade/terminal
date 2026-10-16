@@ -26,14 +26,15 @@ Infraestructura, sesiones y credenciales/lectura fueron revisadas en los PRs #1�
 - [x] En el PR #5 (`feat/binance-market-orders`), integrado en `main`: catálogo/filtros de perpetuos USDT y listas completas de órdenes abiertas normales/algo integrados en la lectura manual. Validación operativa pendiente; no confirma protección ni reconcilia fills.
 - [x] En la misma rama: última lectura completa por cuenta persistida con RLS, protección contra sobrescritura fuera de orden, revalidación de sesión al guardar y recuperación histórica explícita sin contactar al exchange. Migración `0004_read_snapshots.sql`; no aplicada a Railway por el agente.
 - [x] En el PR #6 (`feat/binance-observation-comparison`), integrado por el propietario en `main`: comparación decimal durable entre lecturas completas, baseline obtenido dentro de la transacción y reporte acotado guardado junto al snapshot; recuperación manual autenticada. Ausencia no implica fill/cancelación/cierre y la continuidad sigue sin establecerse. Migración 0005; no aplicada por el agente.
-- [ ] Eventos privados, reconexión y reconciliación de snapshots/fills; monitor de cuenta sincronizado. La comparación del PR #6 y las vistas REST manuales no los sustituyen.
+- [x] En `feat/binance-user-data-stream`: flujo de usuario de solo lectura (listenKey POST/PUT/DELETE + WebSocket fijo), validación de `ORDER_TRADE_UPDATE`/`ACCOUNT_UPDATE`, deduplicación durable, reconexión con backoff y keepalive. Journal append-only `binance_user_events` con RLS y recuperación acotada `POST /v1/connections/binance/events`. No reconcilia fills ni establece continuidad; Binance no reenvía eventos perdidos. Migración `0006_user_events.sql`; no aplicada por el agente. Ver [eventos privados](private-events.md).
+- [ ] Reconciliación de snapshots/eventos y monitor de cuenta sincronizado; buffering/coordinación con snapshots, deduplicación de fills y recuperación tras pérdida/reordenación. La comparación del PR #6, las vistas REST y el journal de eventos no los sustituyen.
 
 1. Integrar identidad y sesiones revocables; no pasar el userId desde el cliente como autoridad.
 2. Conectar PostgreSQL con migraciones versionadas y rol limitado; runner y readiness implementados, pendientes despliegue y consumo por los módulos.
 3. Implementar almacenamiento cifrado de credenciales, restricción de permisos e IP.
 4. Adaptador Binance de instrumentos, cuentas, órdenes normales/algo y posiciones.
-5. Snapshots REST + eventos privados; deduplicación, antigüedad de datos y reconexión.
-6. Eliminar fixtures de las vistas conectadas. Mantener sandbox explícitamente separado.
+5. Snapshots REST + eventos privados (flujo de usuario de solo lectura) con deduplicación, antigüedad de datos y reconexión.
+6. Reconciliar eventos privados con snapshots; eliminar fixtures de las vistas conectadas y mantener el sandbox explícitamente separado.
 
 Criterio: posiciones/órdenes coinciden con el exchange tras reinicio y desconexión, y un usuario no puede acceder a una cuenta ajena.
 

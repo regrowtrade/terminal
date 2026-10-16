@@ -25,7 +25,13 @@ test("requires login and protects the preview API", async ({
   await expect(page).toHaveURL(/\/login/);
   const response = await request.post("/api/plans/preview", { data: {} });
   expect(response.status()).toBe(401);
-  for (const operation of ["list", "snapshot", "latest", "comparison"]) {
+  for (const operation of [
+    "list",
+    "snapshot",
+    "latest",
+    "comparison",
+    "events",
+  ]) {
     const reading = await request.post(
       `/api/connections/binance/${operation}`,
       { data: { accountId: "00000000-0000-4000-8000-000000000001" } },

@@ -3,6 +3,7 @@ module regrow/engine
 go 1.26.9
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/term v0.47.0
