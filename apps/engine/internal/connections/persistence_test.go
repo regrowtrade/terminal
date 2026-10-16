@@ -37,6 +37,9 @@ func (s *snapshotStore) LatestReadSnapshot(context.Context, string, string) (dat
 func (s *snapshotStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
 	return database.StoredComparison{}, s.err
 }
+func (s *snapshotStore) ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error) {
+	return nil, false, s.err
+}
 
 type snapshotReader struct {
 	err   error

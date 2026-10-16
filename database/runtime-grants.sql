@@ -13,6 +13,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.owner_sessions TO terminal_runtim
 GRANT SELECT ON public.exchange_credentials TO terminal_runtime;
 -- Replace only the latest observation. No runtime deletion of saved readings.
 GRANT SELECT, INSERT, UPDATE ON public.exchange_read_snapshots TO terminal_runtime;
+-- Append-only journal of read-only user data stream events; runtime never deletes it.
+GRANT SELECT, INSERT ON public.binance_user_events TO terminal_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.exchange_accounts, public.trade_campaigns, public.strategy_plans,
   public.order_intents, public.executions, public.campaign_ledger, public.journal_notes

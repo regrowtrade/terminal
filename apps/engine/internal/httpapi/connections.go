@@ -18,10 +18,11 @@ type ConnectionService interface {
 	Snapshot(context.Context, string, string) (binance.Snapshot, error)
 	Latest(context.Context, string, string) (database.StoredSnapshot, error)
 	Comparison(context.Context, string, string) (database.StoredComparison, error)
+	Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {
-	for _, operation := range []string{"list", "snapshot", "latest", "comparison"} {
+	for _, operation := range []string{"list", "snapshot", "latest", "comparison", "events"} {
 		mux.HandleFunc("POST /v1/connections/binance/"+operation, func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r, token) {
 				respond(w, 401, map[string]string{"error": "No autorizado"})
@@ -36,10 +37,15 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 			var input struct {
 				TokenHash string `json:"tokenHash"`
 				AccountID string `json:"accountId,omitempty"`
+				After     int64  `json:"after,omitempty"`
 			}
 			d := json.NewDecoder(r.Body)
 			d.DisallowUnknownFields()
-			if d.Decode(&input) != nil || d.Decode(&struct{}{}) != io.EOF || len(input.TokenHash) != 64 || strings.Trim(input.TokenHash, "0123456789abcdef") != "" || (operation == "list" && input.AccountID != "") || (operation != "list" && input.AccountID == "") {
+			if d.Decode(&input) != nil || d.Decode(&struct{}{}) != io.EOF ||
+				len(input.TokenHash) != 64 || strings.Trim(input.TokenHash, "0123456789abcdef") != "" ||
+				(operation == "list" && (input.AccountID != "" || input.After != 0)) ||
+				(operation != "list" && input.AccountID == "") ||
+				(operation != "events" && input.After != 0) || (operation == "events" && input.After < 0) {
 				respond(w, 400, map[string]string{"error": "Solicitud inválida"})
 				return
 			}
@@ -57,6 +63,13 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				data, err = service.Latest(ctx, input.TokenHash, input.AccountID)
 			} else if operation == "comparison" {
 				data, err = service.Comparison(ctx, input.TokenHash, input.AccountID)
+			} else if operation == "events" {
+				var events []database.StoredEvent
+				var truncated bool
+				events, truncated, err = service.Events(ctx, input.TokenHash, input.AccountID, input.After)
+				if err == nil {
+					data = map[string]any{"events": events, "truncated": truncated}
+				}
 			} else {
 				data, err = service.Snapshot(ctx, input.TokenHash, input.AccountID)
 			}
@@ -69,6 +82,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				respond(w, 404, map[string]string{"error": database.ErrSnapshotMissing.Error()})
 			case errors.Is(err, database.ErrComparisonMissing):
 				respond(w, 404, map[string]string{"error": database.ErrComparisonMissing.Error()})
+			case errors.Is(err, database.ErrEventInvalid):
+				respond(w, 503, map[string]string{"error": "evento guardado no válido; no se devuelve un parcial"})
 			case errors.Is(err, binance.ErrPermissions):
 				respond(w, 422, map[string]string{"error": binance.ErrPermissions.Error()})
 			case errors.Is(err, binance.ErrRateLimited):

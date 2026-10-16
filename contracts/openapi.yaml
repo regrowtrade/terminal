@@ -234,6 +234,34 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/events:
+    post:
+      operationId: listBinanceUserEvents
+      description: Explicit recovery of the bounded, ascending journal of persisted read-only user data stream events for the authenticated owner. Requires a valid session and account ownership; no credentials, exchange request or live stream. Events are observations, never reconciled fills, continuity or execution readiness. Available with the live reader disabled.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                after: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Bounded private event journal, ascending by exchange event time. Absence never implies a fill, cancellation or closure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinanceEventsResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   requestBodies:
     SessionDigest:
@@ -646,6 +674,146 @@ components:
           type: array
           maxItems: 64
           items: { type: string, pattern: "^[A-Z0-9_]{1,40}$" }
+    BinanceEventsResponse:
+      type: object
+      additionalProperties: false
+      required: [events, truncated]
+      description: Bounded ascending journal of persisted private events. Not a reconciled state; truncated reports when more events remain.
+      properties:
+        events:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/StoredBinanceEvent" }
+        truncated: { type: boolean }
+    StoredBinanceEvent:
+      type: object
+      additionalProperties: false
+      required: [event, receivedAt]
+      properties:
+        event: { $ref: "#/components/schemas/BinanceUserEvent" }
+        receivedAt: { type: string, format: date-time }
+    BinanceUserEvent:
+      type: object
+      additionalProperties: false
+      required: [type, eventTime, transactionTime]
+      description: Normalized private event; exactly one of orderUpdate/accountUpdate is present. An absent record never proves a fill, cancellation or closure.
+      properties:
+        type: { enum: [ORDER_TRADE_UPDATE, ACCOUNT_UPDATE] }
+        eventTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        transactionTime:
+          { type: integer, minimum: 1, maximum: 9007199254740991 }
+        orderUpdate: { $ref: "#/components/schemas/BinanceOrderUpdate" }
+        accountUpdate: { $ref: "#/components/schemas/BinanceAccountUpdate" }
+    BinanceOrderUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          symbol,
+          clientOrderId,
+          side,
+          positionSide,
+          type,
+          timeInForce,
+          quantity,
+          price,
+          stopPrice,
+          workingType,
+          executionType,
+          orderStatus,
+          orderId,
+          lastFilledQty,
+          cumulativeQty,
+          lastFilledPrice,
+          commission,
+          commissionAsset,
+          tradeId,
+          reduceOnly,
+          closePosition,
+          realizedProfit,
+        ]
+      properties:
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        clientOrderId: { type: string, maxLength: 64 }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        type:
+          {
+            enum:
+              [
+                LIMIT,
+                MARKET,
+                STOP,
+                STOP_MARKET,
+                TAKE_PROFIT,
+                TAKE_PROFIT_MARKET,
+                TRAILING_STOP_MARKET,
+              ],
+          }
+        timeInForce: { type: string, maxLength: 16 }
+        quantity: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        stopPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        activatePrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        workingType: { enum: ["", MARK_PRICE, CONTRACT_PRICE] }
+        executionType: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,31}$" }
+        orderStatus: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,31}$" }
+        orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        lastFilledQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        cumulativeQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        lastFilledPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        commission: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        commissionAsset: { type: string, maxLength: 20 }
+        tradeId: { type: string, pattern: "^(?:0|[1-9][0-9]{0,18})$" }
+        reduceOnly: { type: boolean }
+        closePosition: { type: boolean }
+        realizedProfit: { $ref: "#/components/schemas/ExchangeDecimal" }
+    BinanceAccountUpdate:
+      type: object
+      additionalProperties: false
+      required: [reason, balances, positions]
+      properties:
+        reason: { enum: [ORDER, FUND] }
+        balances:
+          type: array
+          maxItems: 1000
+          items: { $ref: "#/components/schemas/BinanceBalanceUpdate" }
+        positions:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/BinancePositionUpdate" }
+    BinanceBalanceUpdate:
+      type: object
+      additionalProperties: false
+      required: [asset, walletBalance, crossWalletBalance, balanceChange]
+      properties:
+        asset: { type: string, minLength: 1, maxLength: 20 }
+        walletBalance: { $ref: "#/components/schemas/ExchangeDecimal" }
+        crossWalletBalance: { $ref: "#/components/schemas/ExchangeDecimal" }
+        balanceChange: { $ref: "#/components/schemas/ExchangeDecimal" }
+    BinancePositionUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          symbol,
+          positionAmount,
+          entryPrice,
+          accumulatedRealized,
+          unrealizedPnL,
+          marginType,
+          isolatedWallet,
+          positionSide,
+        ]
+      properties:
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        positionAmount: { $ref: "#/components/schemas/ExchangeDecimal" }
+        entryPrice: { $ref: "#/components/schemas/ExchangeDecimal" }
+        accumulatedRealized: { $ref: "#/components/schemas/ExchangeDecimal" }
+        unrealizedPnL: { $ref: "#/components/schemas/ExchangeDecimal" }
+        marginType: { enum: [isolated, cross] }
+        isolatedWallet: { $ref: "#/components/schemas/ExchangeDecimal" }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
     Decimal:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,12})?$'
