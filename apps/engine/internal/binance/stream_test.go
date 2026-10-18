@@ -90,6 +90,7 @@ type scriptConn struct {
 	index     int
 	deadlines []time.Time
 	closed    bool
+	closeOnce sync.Once
 }
 
 func (c *scriptConn) ReadMessage() (int, []byte, error) {
@@ -105,15 +106,21 @@ func (c *scriptConn) SetReadDeadline(t time.Time) error {
 	c.deadlines = append(c.deadlines, t)
 	return nil
 }
-func (c *scriptConn) Close() error { c.closed = true; return nil }
+func (c *scriptConn) Close() error {
+	c.closeOnce.Do(func() { c.closed = true })
+	return nil
+}
 
 type scriptDialer struct {
+	mu    sync.Mutex
 	conns []streamConn
 	urls  []string
 	index int
 }
 
 func (d *scriptDialer) Dial(_ context.Context, url string) (streamConn, *http.Response, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.urls = append(d.urls, url)
 	if d.index >= len(d.conns) {
 		return nil, nil, errors.New("no more connections")
@@ -121,6 +128,21 @@ func (d *scriptDialer) Dial(_ context.Context, url string) (streamConn, *http.Re
 	conn := d.conns[d.index]
 	d.index++
 	return conn, nil, nil
+}
+
+func (d *scriptDialer) dialCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.urls)
+}
+
+func (d *scriptDialer) urlAt(i int) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if i >= len(d.urls) {
+		return ""
+	}
+	return d.urls[i]
 }
 
 type blockingConn struct {
@@ -308,7 +330,7 @@ func TestRunReconnectsOnListenKeyExpiry(t *testing.T) {
 	if err := s.Run(ctx, c, sink); err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal("unexpected run error", err)
 	}
-	if calls.post != 2 || calls.del != 2 || len(dialer.urls) != 2 || dialer.urls[1] != "wss://fstream.binance.com/ws/stream-key-1" {
+	if calls.post != 2 || calls.del != 2 || dialer.dialCount() != 2 || dialer.urlAt(1) != "wss://fstream.binance.com/ws/stream-key-1" {
 		t.Fatal("expiry did not re-establish the stream", calls)
 	}
 	mu.Lock()
@@ -331,7 +353,7 @@ func TestRunStopsOnUnsafeKeyWithoutRetry(t *testing.T) {
 	if err := s.Run(context.Background(), c, func(UserEvent) {}); !errors.Is(err, ErrPermissions) {
 		t.Fatal("unsafe key did not fail closed", err)
 	}
-	if len(dialer.urls) != 0 {
+	if dialer.dialCount() != 0 {
 		t.Fatal("stream dialed with an unsafe key")
 	}
 }
@@ -374,10 +396,10 @@ func TestRunUnblocksBlockedReadOnCancellation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx, c, func(UserEvent) {}) }()
 	deadline := time.Now().Add(2 * time.Second)
-	for len(dialer.urls) == 0 && time.Now().Before(deadline) {
+	for dialer.dialCount() == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if len(dialer.urls) == 0 {
+	if dialer.dialCount() == 0 {
 		t.Fatal("stream never dialed")
 	}
 	cancel()

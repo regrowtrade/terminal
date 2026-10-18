@@ -192,11 +192,15 @@ func (s *Stream) runOnce(ctx context.Context, credentials vault.Credentials, sin
 	if err != nil {
 		return err
 	}
+	// The watcher, keepalive and cleanup paths can all request a close; a single
+	// sync.Once keeps the connection close race-free and idempotent.
+	var closeOnce sync.Once
+	closeConn := func() { closeOnce.Do(func() { _ = conn.Close() }) }
 	// Close the connection when the context is cancelled so a blocked read
 	// returns promptly on shutdown instead of waiting for the read deadline.
 	go func() {
 		<-connCtx.Done()
-		_ = conn.Close()
+		closeConn()
 	}()
 	var keepalive sync.WaitGroup
 	keepalive.Add(1)
@@ -210,7 +214,7 @@ func (s *Stream) runOnce(ctx context.Context, credentials vault.Credentials, sin
 				return
 			case <-ticker.C:
 				if _, err := s.client.userDataKey(connCtx, credentials, http.MethodPut); err != nil {
-					_ = conn.Close()
+					closeConn()
 					return
 				}
 			}
@@ -218,7 +222,7 @@ func (s *Stream) runOnce(ctx context.Context, credentials vault.Credentials, sin
 	}()
 	defer func() {
 		cancel()
-		_ = conn.Close()
+		closeConn()
 		keepalive.Wait()
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer closeCancel()
