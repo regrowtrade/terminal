@@ -69,9 +69,9 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 func TestMonitorRequiresComponents(t *testing.T) {
 	stream := &fakeStreamer{}
 	for name, m := range map[string]*Monitor{
-		"nil":      nil,
-		"no vault": {Store: &fakeMonitorStore{}, Stream: stream},
-		"no store": {Vault: &vault.Keyring{}, Stream: stream},
+		"nil":       nil,
+		"no vault":  {Store: &fakeMonitorStore{}, Stream: stream},
+		"no store":  {Vault: &vault.Keyring{}, Stream: stream},
 		"no stream": {Store: &fakeMonitorStore{}, Vault: &vault.Keyring{}},
 	} {
 		t.Run(name, func(t *testing.T) {
