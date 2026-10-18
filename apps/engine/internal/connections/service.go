@@ -20,6 +20,7 @@ type Store interface {
 	SaveReadSnapshot(context.Context, string, string, binance.Snapshot) error
 	LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error)
 	LatestReadComparison(context.Context, string, string) (database.StoredComparison, error)
+	ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -73,4 +74,14 @@ func (s *Service) Comparison(ctx context.Context, hash, account string) (databas
 		return database.StoredComparison{}, ErrDisabled
 	}
 	return s.Store.LatestReadComparison(ctx, hash, account)
+}
+
+// Events returns the bounded, ascending journal of persisted private events for
+// the authenticated owner. It is read-only and available with the live reader
+// disabled. It never reconciles, infers fills or establishes continuity.
+func (s *Service) Events(ctx context.Context, hash, account string, after int64) ([]database.StoredEvent, bool, error) {
+	if s == nil || s.Store == nil {
+		return nil, false, ErrDisabled
+	}
+	return s.Store.ListUserEvents(ctx, hash, account, after, 200)
 }

@@ -32,6 +32,10 @@ func (f *fakeConnections) Comparison(context.Context, string, string) (database.
 	f.calls++
 	return database.StoredComparison{}, f.err
 }
+func (f *fakeConnections) Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error) {
+	f.calls++
+	return nil, false, f.err
+}
 func TestConnectionBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, token string
@@ -94,6 +98,39 @@ func TestStoredComparisonBoundary(t *testing.T) {
 		if w.Code != tc.status || service.calls != 1 || strings.Contains(w.Body.String(), "private-driver-details") || w.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal("unsafe comparison response", w.Code)
 		}
+	}
+}
+
+func TestStoredEventsBoundary(t *testing.T) {
+	valid := `{"tokenHash":"` + strings.Repeat("a", 64) + `","accountId":"00000000-0000-4000-8000-000000000001"}`
+	for _, tc := range []struct {
+		name, body string
+		err        error
+		status     int
+		calls      int
+	}{
+		{"ok", valid, nil, 200, 1},
+		{"revoked", valid, database.ErrSessionInvalid, 401, 1},
+		{"unknown account", valid, database.ErrAccountMissing, 404, 1},
+		{"invalid event", valid, database.ErrEventInvalid, 503, 1},
+		{"negative after", strings.TrimSuffix(valid, "}") + `,"after":-1}`, nil, 400, 0},
+		{"after on list", `{"tokenHash":"` + strings.Repeat("a", 64) + `","after":1}`, nil, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &fakeConnections{err: tc.err}
+			op := "events"
+			if tc.name == "after on list" {
+				op = "list"
+			}
+			r := httptest.NewRequest("POST", "/v1/connections/binance/"+op, strings.NewReader(tc.body))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
+			if w.Code != tc.status || service.calls != tc.calls {
+				t.Fatal("unsafe events response", w.Code, service.calls)
+			}
+		})
 	}
 }
 

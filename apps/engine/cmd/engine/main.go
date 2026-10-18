@@ -33,6 +33,7 @@ func main() {
 		os.Exit(1)
 	}
 	var store *database.Store
+	var monitor *connections.Monitor
 	enabled := os.Getenv("BINANCE_READ_ENABLED")
 	if enabled != "" && enabled != "false" && enabled != "true" {
 		slog.Error("BINANCE_READ_ENABLED debe ser true o false")
@@ -75,7 +76,11 @@ func main() {
 				slog.Error("Configura el keyring de credenciales solo en el motor")
 				os.Exit(1)
 			}
-			service.Vault, service.Reader = keys, binance.New()
+			client := binance.New()
+			service.Vault, service.Reader = keys, client
+			// The read-only user data stream journals private events for later
+			// reconciliation. It never submits, cancels or amends orders.
+			monitor = &connections.Monitor{Store: store, Vault: keys, Stream: binance.NewStream(client), Log: slog.Default()}
 		}
 		server.Handler = httpapi.HandlerWithConnections(token, store.Ready, store, service)
 	} else if enabled == "true" {
@@ -84,6 +89,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if monitor != nil {
+		go func() {
+			if err := monitor.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("Monitor de eventos privados detenido", "error", err)
+			}
+		}()
+	}
 	failure := make(chan error, 1)
 	go func() {
 		slog.Info("Motor iniciado", "address", address, "mode", "simulation")

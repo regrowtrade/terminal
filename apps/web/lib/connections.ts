@@ -8,6 +8,7 @@ import {
   snapshotSchema,
   storedSnapshotSchema,
 } from "./connections-schema";
+import { eventsResponseSchema } from "./events-schema";
 import { boundedText } from "./request";
 import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
@@ -19,6 +20,7 @@ const responseSchemas = {
   snapshot: snapshotSchema,
   latest: storedSnapshotSchema,
   comparison: storedComparisonSchema,
+  events: eventsResponseSchema,
 };
 function json(body: unknown, status: number) {
   return Response.json(body, {
@@ -28,7 +30,7 @@ function json(body: unknown, status: number) {
 }
 export async function connectionRequest(
   request: Request,
-  operation: "list" | "snapshot" | "latest" | "comparison",
+  operation: "list" | "snapshot" | "latest" | "comparison" | "events",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -55,7 +57,19 @@ export async function connectionRequest(
   const parsed = (
     operation === "list"
       ? z.object({}).strict()
-      : z.object({ accountId: z.uuid() }).strict()
+      : operation === "events"
+        ? z
+            .object({
+              accountId: z.uuid(),
+              after: z
+                .number()
+                .int()
+                .nonnegative()
+                .max(Number.MAX_SAFE_INTEGER)
+                .optional(),
+            })
+            .strict()
+        : z.object({ accountId: z.uuid() }).strict()
   ).safeParse(input);
   if (!parsed.success) return json({ error: "Solicitud inválida." }, 400);
   const cookie = (await cookies()).get(cookieName())?.value;

@@ -26,6 +26,9 @@ func (s deniedStore) LatestReadSnapshot(context.Context, string, string) (databa
 func (s deniedStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
 	return database.StoredComparison{}, s.err
 }
+func (s deniedStore) ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error) {
+	return nil, false, s.err
+}
 
 type neverReader struct{ t *testing.T }
 
