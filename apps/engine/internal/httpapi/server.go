@@ -23,9 +23,14 @@ func HandlerWithSessions(token string, check func(context.Context) error, sessio
 }
 
 func HandlerWithConnections(token string, check func(context.Context) error, sessions SessionStore, connections ConnectionService) http.Handler {
+	return HandlerWithPlans(token, check, sessions, connections, nil)
+}
+
+func HandlerWithPlans(token string, check func(context.Context) error, sessions SessionStore, connections ConnectionService, plans PlanStore) http.Handler {
 	mux := http.NewServeMux()
 	registerSessions(mux, token, sessions)
 	registerConnections(mux, token, connections)
+	registerPlans(mux, token, plans)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "version": "0.1.0"})
 	})
