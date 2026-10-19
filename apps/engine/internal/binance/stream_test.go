@@ -415,3 +415,43 @@ func TestRunUnblocksBlockedReadOnCancellation(t *testing.T) {
 		t.Fatal("stream did not close the connection on cancellation")
 	}
 }
+
+func TestStreamReportsConnectionStatus(t *testing.T) {
+	c := credentials()
+	calls := &keyCalls{}
+	client := newClient(streamTransport(t, c, calls, "stream-key-1"))
+	expired := &scriptConn{steps: []connStep{{payload: []byte(`{"e":"listenKeyExpired","E":1}`)}}}
+	s := stream(client, &scriptDialer{conns: []streamConn{expired}})
+	var mu sync.Mutex
+	var statuses []bool
+	s.SetStatus(func(connected bool) {
+		mu.Lock()
+		statuses = append(statuses, connected)
+		mu.Unlock()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, c, func(UserEvent) {}) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(statuses)
+		mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no status transitions reported")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal("unexpected shutdown error", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !statuses[0] || statuses[1] {
+		t.Fatalf("status transitions wrong: %v", statuses)
+	}
+}

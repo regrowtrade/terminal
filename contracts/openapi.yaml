@@ -262,6 +262,33 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/reconcile:
+    post:
+      operationId: reconcileBinanceStream
+      description: Layers the deduplicated read-only event stream over the latest saved snapshot and reports stream continuity for the authenticated owner. Requires a valid session and ownership; no credentials or exchange request. When the stream has disconnected since the snapshot, continuity is gapped and the event-derived fills are explicitly incomplete. Never inferred from absence, never execution readiness. Available with the live reader disabled.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Continuity status plus bounded, deduplicated TRADE executions from the stream, layered on the authoritative snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationReport" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   requestBodies:
     SessionDigest:
@@ -814,6 +841,72 @@ components:
         marginType: { enum: [isolated, cross] }
         isolatedWallet: { $ref: "#/components/schemas/ExchangeDecimal" }
         positionSide: { enum: [BOTH, LONG, SHORT] }
+    ReconciliationReport:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          continuity,
+          executionReady,
+          snapshotCapturedAt,
+          eventsTruncated,
+          totalEvents,
+          orderUpdates,
+          accountUpdates,
+          lastEventTime,
+          totalFills,
+          fillLimit,
+          fillsTruncated,
+          fills,
+        ]
+      description: Deduplicated stream summary layered on the authoritative snapshot. continuity is gapped when the stream has disconnected since the snapshot, so fills may be incomplete. Never a reconciled ledger or execution readiness.
+      properties:
+        continuity: { enum: [established, gapped] }
+        executionReady: { const: false }
+        snapshotCapturedAt: { type: string, format: date-time }
+        eventsTruncated: { type: boolean }
+        totalEvents: { type: integer, minimum: 0 }
+        orderUpdates: { type: integer, minimum: 0 }
+        accountUpdates: { type: integer, minimum: 0 }
+        lastEventTime: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        totalFills: { type: integer, minimum: 0 }
+        fillLimit: { const: 200 }
+        fillsTruncated: { type: boolean }
+        fills:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/BinanceFill" }
+    BinanceFill:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          orderId,
+          tradeId,
+          symbol,
+          side,
+          positionSide,
+          price,
+          quantity,
+          commission,
+          commissionAsset,
+          eventTime,
+          transactionTime,
+        ]
+      description: A single TRADE execution observed in the stream, deduplicated by (orderId, tradeId). Amounts are original decimal strings; never inferred from absence.
+      properties:
+        orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        tradeId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        quantity: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        commission: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        commissionAsset: { type: string, maxLength: 20 }
+        eventTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        transactionTime:
+          { type: integer, minimum: 1, maximum: 9007199254740991 }
     Decimal:
       type: string
       pattern: '^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,12})?$'

@@ -16,10 +16,12 @@ import (
 )
 
 type fakeMonitorStore struct {
-	accounts []database.StreamAccount
-	saved    []binance.UserEvent
-	listErr  error
-	saveErr  error
+	accounts   []database.StreamAccount
+	saved      []binance.UserEvent
+	statuses   []bool
+	eventTimes []int64
+	listErr    error
+	saveErr    error
 }
 
 func (f *fakeMonitorStore) ListStreamAccounts(context.Context) ([]database.StreamAccount, error) {
@@ -32,15 +34,31 @@ func (f *fakeMonitorStore) SaveUserEvents(_ context.Context, _ string, events []
 	f.saved = append(f.saved, events...)
 	return len(events), nil
 }
-
-type fakeStreamer struct {
-	event binance.UserEvent
-	calls int
+func (f *fakeMonitorStore) SetStreamConnected(_ context.Context, _ string, connected bool) error {
+	f.statuses = append(f.statuses, connected)
+	return nil
+}
+func (f *fakeMonitorStore) RecordStreamEvent(_ context.Context, _ string, eventTime int64) error {
+	f.eventTimes = append(f.eventTimes, eventTime)
+	return nil
 }
 
+type fakeStreamer struct {
+	event  binance.UserEvent
+	calls  int
+	status func(bool)
+}
+
+func (f *fakeStreamer) SetStatus(fn func(bool)) { f.status = fn }
 func (f *fakeStreamer) Run(_ context.Context, _ vault.Credentials, sink func(binance.UserEvent)) error {
 	f.calls++
+	if f.status != nil {
+		f.status(true)
+	}
 	sink(f.event)
+	if f.status != nil {
+		f.status(false)
+	}
 	return nil
 }
 
@@ -82,16 +100,22 @@ func TestMonitorRequiresComponents(t *testing.T) {
 	}
 }
 
-func TestMonitorStreamsAndJournalsEvents(t *testing.T) {
+func TestMonitorStreamsJournalsAndTracksContinuity(t *testing.T) {
 	ring, credentials, binding, envelope := sealedAccount(t)
 	store := &fakeMonitorStore{accounts: []database.StreamAccount{{ID: binding.AccountID, Binding: binding, Envelope: envelope}}}
-	stream := &fakeStreamer{event: binance.UserEvent{Type: binance.EventAccountUpdate, EventTime: 1, TransactionTime: 1, AccountUpdate: &binance.AccountUpdate{Reason: "ORDER"}}}
+	stream := &fakeStreamer{event: binance.UserEvent{Type: binance.EventAccountUpdate, EventTime: 1234, TransactionTime: 1234, AccountUpdate: &binance.AccountUpdate{Reason: "ORDER"}}}
 	m := &Monitor{Store: store, Vault: ring, Stream: stream, Log: discardLogger()}
 	if err := m.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if stream.calls != 1 || len(store.saved) != 1 || store.saved[0].Type != binance.EventAccountUpdate {
 		t.Fatal("monitor did not journal the streamed event")
+	}
+	if len(store.statuses) != 2 || !store.statuses[0] || store.statuses[1] {
+		t.Fatal("monitor did not record connection transitions")
+	}
+	if len(store.eventTimes) != 1 || store.eventTimes[0] != 1234 {
+		t.Fatal("monitor did not record the event watermark")
 	}
 	opened, err := ring.Open(binding, envelope)
 	if err != nil || opened != credentials {

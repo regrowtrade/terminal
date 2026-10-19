@@ -9,6 +9,7 @@ import (
 	"regrow/engine/internal/binance"
 	"regrow/engine/internal/connections"
 	"regrow/engine/internal/database"
+	"regrow/engine/internal/reconcile"
 	"strings"
 	"time"
 )
@@ -19,10 +20,11 @@ type ConnectionService interface {
 	Latest(context.Context, string, string) (database.StoredSnapshot, error)
 	Comparison(context.Context, string, string) (database.StoredComparison, error)
 	Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error)
+	Reconcile(context.Context, string, string) (reconcile.Report, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {
-	for _, operation := range []string{"list", "snapshot", "latest", "comparison", "events"} {
+	for _, operation := range []string{"list", "snapshot", "latest", "comparison", "events", "reconcile"} {
 		mux.HandleFunc("POST /v1/connections/binance/"+operation, func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r, token) {
 				respond(w, 401, map[string]string{"error": "No autorizado"})
@@ -70,6 +72,8 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				if err == nil {
 					data = map[string]any{"events": events, "truncated": truncated}
 				}
+			} else if operation == "reconcile" {
+				data, err = service.Reconcile(ctx, input.TokenHash, input.AccountID)
 			} else {
 				data, err = service.Snapshot(ctx, input.TokenHash, input.AccountID)
 			}

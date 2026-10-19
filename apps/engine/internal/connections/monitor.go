@@ -11,9 +11,10 @@ import (
 )
 
 // Streamer runs the read-only user data stream for one credential set, invoking
-// a sink for each validated event until the context is cancelled.
+// a sink for each validated event and a status callback on connection changes.
 type Streamer interface {
 	Run(context.Context, vault.Credentials, func(binance.UserEvent)) error
+	SetStatus(func(connected bool))
 }
 
 // MonitorStore is the subset of the store the background monitor needs. It runs
@@ -21,11 +22,14 @@ type Streamer interface {
 type MonitorStore interface {
 	ListStreamAccounts(context.Context) ([]database.StreamAccount, error)
 	SaveUserEvents(context.Context, string, []binance.UserEvent) (int, error)
+	SetStreamConnected(context.Context, string, bool) error
+	RecordStreamEvent(context.Context, string, int64) error
 }
 
-// Monitor streams private events for every provisioned account and journals them.
-// It is read-only: it never places, cancels or amends orders. Events lost during
-// a disconnection or database outage are recovered later from REST snapshots.
+// Monitor streams private events for every provisioned account and journals them
+// together with durable continuity state. It is read-only: it never places,
+// cancels or amends orders. Events lost during a disconnection or database
+// outage are recovered later from REST snapshots.
 type Monitor struct {
 	Store  MonitorStore
 	Vault  *vault.Keyring
@@ -55,12 +59,22 @@ func (m *Monitor) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func(accountID string, credentials vault.Credentials) {
 			defer wg.Done()
+			stream := m.Stream
+			stream.SetStatus(func(connected bool) {
+				if err := m.Store.SetStreamConnected(ctx, accountID, connected); err != nil {
+					logger.Error("monitor: no se pudo registrar estado de conexión", "account", accountID, "error", err)
+				}
+			})
 			sink := func(event binance.UserEvent) {
 				if _, err := m.Store.SaveUserEvents(ctx, accountID, []binance.UserEvent{event}); err != nil {
 					logger.Error("monitor: no se pudo guardar evento privado", "account", accountID, "type", event.Type, "error", err)
+					return
+				}
+				if err := m.Store.RecordStreamEvent(ctx, accountID, event.EventTime); err != nil {
+					logger.Error("monitor: no se pudo registrar tiempo de evento", "account", accountID, "error", err)
 				}
 			}
-			if err := m.Stream.Run(ctx, credentials, sink); err != nil && ctx.Err() == nil {
+			if err := stream.Run(ctx, credentials, sink); err != nil && ctx.Err() == nil {
 				logger.Error("monitor: flujo de eventos detenido", "account", accountID, "error", err)
 			}
 		}(account.ID, credentials)
