@@ -7,6 +7,7 @@ import (
 	"regrow/engine/internal/binance"
 	"regrow/engine/internal/connections"
 	"regrow/engine/internal/database"
+	"regrow/engine/internal/reconcile"
 	"strings"
 	"testing"
 )
@@ -35,6 +36,10 @@ func (f *fakeConnections) Comparison(context.Context, string, string) (database.
 func (f *fakeConnections) Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error) {
 	f.calls++
 	return nil, false, f.err
+}
+func (f *fakeConnections) Reconcile(context.Context, string, string) (reconcile.Report, error) {
+	f.calls++
+	return reconcile.Report{}, f.err
 }
 func TestConnectionBoundary(t *testing.T) {
 	for _, tc := range []struct {
@@ -129,6 +134,34 @@ func TestStoredEventsBoundary(t *testing.T) {
 			HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
 			if w.Code != tc.status || service.calls != tc.calls {
 				t.Fatal("unsafe events response", w.Code, service.calls)
+			}
+		})
+	}
+}
+
+func TestReconcileBoundary(t *testing.T) {
+	valid := `{"tokenHash":"` + strings.Repeat("a", 64) + `","accountId":"00000000-0000-4000-8000-000000000001"}`
+	for _, tc := range []struct {
+		name, body string
+		err        error
+		status     int
+		calls      int
+	}{
+		{"ok", valid, nil, 200, 1},
+		{"revoked", valid, database.ErrSessionInvalid, 401, 1},
+		{"unknown account", valid, database.ErrAccountMissing, 404, 1},
+		{"missing snapshot", valid, database.ErrSnapshotMissing, 404, 1},
+		{"after rejected", strings.TrimSuffix(valid, "}") + `,"after":1}`, nil, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &fakeConnections{err: tc.err}
+			r := httptest.NewRequest("POST", "/v1/connections/binance/reconcile", strings.NewReader(tc.body))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			HandlerWithConnections(testToken, nil, nil, service).ServeHTTP(w, r)
+			if w.Code != tc.status || service.calls != tc.calls {
+				t.Fatal("unsafe reconcile response", w.Code, service.calls)
 			}
 		})
 	}
