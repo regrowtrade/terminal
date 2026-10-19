@@ -31,6 +31,9 @@ type Service struct {
 	Store  Store
 	Vault  *vault.Keyring
 	Reader Reader
+	// Gate buffers events that arrive while a snapshot read is in flight so
+	// they are not lost across the capturedAt boundary. Optional.
+	Gate *SnapshotGate
 }
 
 func (s *Service) State(ctx context.Context, hash string) (State, error) {
@@ -52,6 +55,13 @@ func (s *Service) Snapshot(ctx context.Context, hash, account string) (binance.S
 	if err != nil {
 		return binance.Snapshot{}, vault.ErrVault
 	}
+	// Buffer events during the read so the monitor's journal never races the
+	// snapshot save and no event straddling the boundary is dropped.
+	commit := func() {}
+	if s.Gate != nil {
+		commit = s.Gate.begin(account)
+	}
+	defer commit()
 	snapshot, err := s.Reader.Snapshot(ctx, credentials)
 	if err != nil {
 		return binance.Snapshot{}, err

@@ -123,6 +123,29 @@ func TestMonitorStreamsJournalsAndTracksContinuity(t *testing.T) {
 	}
 }
 
+func TestMonitorBuffersEventsThroughGateDuringRead(t *testing.T) {
+	ring, _, binding, envelope := sealedAccount(t)
+	store := &fakeMonitorStore{accounts: []database.StreamAccount{{ID: binding.AccountID, Binding: binding, Envelope: envelope}}}
+	stream := &fakeStreamer{event: binance.UserEvent{Type: binance.EventAccountUpdate, EventTime: 1234, TransactionTime: 1234, AccountUpdate: &binance.AccountUpdate{Reason: "ORDER"}}}
+	gate := NewSnapshotGate()
+	// A snapshot read is already in flight for this account.
+	commit := gate.begin(binding.AccountID)
+	m := &Monitor{Store: store, Vault: ring, Stream: stream, Log: discardLogger(), Gate: gate}
+	if err := m.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.saved) != 0 {
+		t.Fatal("event was journaled while a snapshot read was in flight")
+	}
+	commit()
+	if len(store.saved) != 1 || store.saved[0].Type != binance.EventAccountUpdate {
+		t.Fatal("buffered event was not flushed after the read committed")
+	}
+	if len(store.eventTimes) != 1 || store.eventTimes[0] != 1234 {
+		t.Fatal("buffered event watermark was not recorded")
+	}
+}
+
 func TestMonitorSkipsUnopenableCredential(t *testing.T) {
 	ring, _, binding, envelope := sealedAccount(t)
 	corrupt := envelope

@@ -79,8 +79,12 @@ func main() {
 			client := binance.New()
 			service.Vault, service.Reader = keys, client
 			// The read-only user data stream journals private events for later
-			// reconciliation. It never submits, cancels or amends orders.
-			monitor = &connections.Monitor{Store: store, Vault: keys, Stream: binance.NewStream(client), Log: slog.Default()}
+			// reconciliation. It never submits, cancels or amends orders. A shared
+			// gate buffers events while a snapshot read is in flight so none are
+			// lost across the capturedAt boundary.
+			gate := connections.NewSnapshotGate()
+			service.Gate = gate
+			monitor = &connections.Monitor{Store: store, Vault: keys, Stream: binance.NewStream(client), Log: slog.Default(), Gate: gate}
 		}
 		server.Handler = httpapi.HandlerWithConnections(token, store.Ready, store, service)
 	} else if enabled == "true" {
