@@ -34,9 +34,37 @@ Solo consulta PostgreSQL: no descifra claves ni contacta Binance, y funciona con
 
 ## Despliegue
 
-Aplicar la migración `0008_fills.sql` y los grants antes de actualizar todos los motores; web y motor se actualizan juntos para el endpoint nuevo. Ver [eventos privados](private-events.md) y [roadmap](roadmap.md).
+Aplicar las migraciones hasta `0009_legacy_snapshot_archives.sql` y los grants antes de actualizar todos los motores; web y motor se actualizan juntos para el endpoint nuevo. Ver [eventos privados](private-events.md) y [roadmap](roadmap.md).
 
-Compatibilidad pendiente antes de un despliegue con datos existentes: las lecturas antiguas sin `capturedAtMs` se rechazan al recuperar o comparar el baseline; tampoco permiten guardar la siguiente lectura mientras sigan siendo el baseline. No se inventa un reloj del exchange a partir del reloj local. Hay que definir y probar una transición administrativa que preserve esas observaciones antes de desplegar esta rama sobre una base con lecturas antiguas. La migración `0008` crea fills; no convierte snapshots ni rellena fills históricos.
+Las lecturas antiguas sin `capturedAtMs` siguen rechazándose como baseline: no se inventa un reloj del exchange a partir del reloj local. Su transición es explícita y preserva el registro original; ver el procedimiento siguiente. La migración `0008` crea fills y `0009` crea el archivo, pero ninguna mueve datos ni rellena historia automáticamente.
+
+## Transición de snapshots anteriores al corte por exchange
+
+Herramienta administrativa `snapshot-transition`, incluida en la imagen del motor. Nunca se ejecuta desde HTTP ni con el rol del motor; no necesita claves del exchange ni KEKs. Solo admite cuentas Binance production del propietario personal de esa base, sin recibir un `ownerId` del operador.
+
+1. Hacer backup y comprobar restauración. Detener todos los escritores/monitores antiguos y las lecturas manuales; no mezclar versiones ni dejar buffers en vuelo durante la transición. La herramienta también toma el mismo bloqueo por propietario que los escritores actuales.
+2. Aplicar explícitamente migraciones hasta `0009` y reaplicar `database/runtime-grants.sql`. Inyectar `MIGRATION_DATABASE_URL` solo en la consola administrativa, nunca como argumento ni variable del servicio HTTP.
+3. Inspeccionar **una cuenta**. Desde `apps/engine`:
+
+   ```powershell
+   go run ./cmd/snapshot-transition --account $account
+   ```
+
+   Por defecto no modifica datos. Devuelve solo estado, fecha y huella SHA-256, nunca el snapshot. `legacy` significa que falta la propiedad `capturedAtMs`; `current` significa que la propiedad existe, **no** que su contenido haya sido validado. Una propiedad nula/inválida requiere investigación y no se retira como legacy. `missing` significa que no hay baseline activo, no que se haya comprobado la existencia de un archivo.
+
+4. Revisar cuenta, fecha y huella; después confirmar explícitamente la misma observación:
+
+   ```powershell
+   go run ./cmd/snapshot-transition --account $account --apply --expected-sha256 "HUELLA_SHA256_REVISADA"
+   ```
+
+   En la imagen, sustituir `go run ./cmd/snapshot-transition` por `/usr/local/bin/snapshot-transition`. La huella cubre propietario, cuenta, timestamps, snapshot y comparación completa. Si cualquiera cambió desde la inspección, se rechaza sin cambios; volver a inspeccionar, no reintentar a ciegas.
+
+5. Verificar `status=archived` y su `archiveId`. Una sola transacción copia el JSON original, comparación (incluido NULL), fechas y propietario a `exchange_read_snapshot_archives`; retira únicamente ese baseline activo; marca el hueco sin cambiar conexión ni watermark; registra `account.read_archived` sin payload financiero. Un error revierte todo. Repetir sobre una cuenta sin baseline devuelve `missing`, sin duplicar el archivo ni la auditoría. Una captura nueva nunca se retira con una huella anterior.
+6. Comprobar los metadatos del archivo desde la consola administrativa privada y conservarlo junto a los backups. El runtime no tiene SELECT/INSERT/UPDATE/DELETE sobre el archivo, además de RLS forzada; **no hay recuperación del archivo desde la UI ni API**, ni restauración automática al baseline. No eliminar ni reescribir esa evidencia. Si el resultado del comando es ambiguo, inspeccionar el baseline y el archivo antes de reintentar.
+7. Arrancar solo las versiones nuevas y solicitar una lectura manual completa. Hasta entonces `latest`/`comparison`/`reconcile` no tienen baseline y devuelven ausencia explícita (404). La primera lectura nueva produce `initial_observation`, sin comparar contra el archivo ni rellenar fills históricos. Solo guardar esa lectura reinicia el hueco; no implica ejecución habilitada ni una captura REST atómica.
+
+Probado con PostgreSQL desechable: preservación exacta, comparación NULL, evidencia financiera corrupta sin reinterpretación, huellas obsoletas, confirmaciones concurrentes, rollback si falla la auditoría, permisos/RLS y lectura nueva. No se ha ejecutado sobre Railway ni validado operativamente con claves reales.
 
 ## Qué falta
 
