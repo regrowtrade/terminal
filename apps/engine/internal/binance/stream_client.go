@@ -112,6 +112,7 @@ type Stream struct {
 	minBackoff time.Duration
 	maxBackoff time.Duration
 	now        func() time.Time
+	onStatus   func(connected bool)
 }
 
 func NewStream(client *Client) *Stream {
@@ -119,6 +120,17 @@ func NewStream(client *Client) *Stream {
 		client: client, dial: gorillaDialer{},
 		keepAlive: 30 * time.Minute, minBackoff: time.Second, maxBackoff: 30 * time.Second,
 		now: time.Now,
+	}
+}
+
+// SetStatus registers a callback invoked on connection state changes. It runs
+// from the stream goroutine, so implementations must be fast and concurrency
+// safe; the monitor uses it to mark durable gap boundaries.
+func (s *Stream) SetStatus(fn func(connected bool)) { s.onStatus = fn }
+
+func (s *Stream) notifyStatus(connected bool) {
+	if s.onStatus != nil {
+		s.onStatus(connected)
 	}
 }
 
@@ -192,6 +204,7 @@ func (s *Stream) runOnce(ctx context.Context, credentials vault.Credentials, sin
 	if err != nil {
 		return err
 	}
+	s.notifyStatus(true)
 	// The watcher, keepalive and cleanup paths can all request a close; a single
 	// sync.Once keeps the connection close race-free and idempotent.
 	var closeOnce sync.Once
@@ -221,6 +234,7 @@ func (s *Stream) runOnce(ctx context.Context, credentials vault.Credentials, sin
 		}
 	}()
 	defer func() {
+		s.notifyStatus(false)
 		cancel()
 		closeConn()
 		keepalive.Wait()
