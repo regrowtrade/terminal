@@ -23,6 +23,7 @@ func numeric(value string, nonnegative bool) bool {
 func ValidateSnapshot(s Snapshot) error {
 	if s.Source != "binance-production" || s.Mode != "read_only" || s.Consistency != "rest_non_atomic" || s.ExecutionReady ||
 		s.StartedAt.IsZero() || s.CapturedAt.Before(s.StartedAt) || s.CapturedAt.Sub(s.StartedAt) > 30*time.Second ||
+		s.CapturedAtMs <= 0 || s.CapturedAtMs > 9007199254740991 ||
 		s.OpenOrders == nil || len(s.OpenOrders) > 10000 || s.AlgoOrders == nil || len(s.AlgoOrders) > 10000 ||
 		len(s.Instruments) == 0 || len(s.Instruments) > 10000 {
 		return ErrResponse

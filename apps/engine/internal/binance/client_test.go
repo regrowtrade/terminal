@@ -107,8 +107,8 @@ func TestSnapshotUsesOnlyAllowlistedSignedReads(t *testing.T) {
 	if snapshot.ExecutionReady || snapshot.Consistency != "rest_non_atomic" || snapshot.Assets[0].WalletBalance != "100.00000001" || snapshot.Positions[0].Quantity != "-1" {
 		t.Fatal("snapshot lost decimal/side/source semantics")
 	}
-	if snapshot.OpenOrders[0].ID != "9007199254740993" || snapshot.AlgoOrders[0].ID != "9007199254740995" || snapshot.OpenOrders[0].Executed != "0.5" || !snapshot.AlgoOrders[0].ClosePosition || snapshot.Instruments[0].Price.Step != "0.10" || snapshot.Instruments[0].MarketLot.Step != "0.000" || snapshot.StartedAt.After(snapshot.CapturedAt) {
-		t.Fatal("order identity, filter or observation interval lost")
+	if snapshot.OpenOrders[0].ID != "9007199254740993" || snapshot.AlgoOrders[0].ID != "9007199254740995" || snapshot.OpenOrders[0].Executed != "0.5" || !snapshot.AlgoOrders[0].ClosePosition || snapshot.Instruments[0].Price.Step != "0.10" || snapshot.Instruments[0].MarketLot.Step != "0.000" || snapshot.StartedAt.After(snapshot.CapturedAt) || snapshot.CapturedAtMs <= 0 {
+		t.Fatal("order identity, filter, observation interval or exchange watermark lost")
 	}
 	raw, _ := json.Marshal(snapshot)
 	if strings.Contains(string(raw), c.APIKey) || strings.Contains(string(raw), c.APISecret) {
