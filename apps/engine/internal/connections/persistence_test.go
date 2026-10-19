@@ -15,10 +15,12 @@ import (
 )
 
 type snapshotStore struct {
-	binding  vault.Binding
-	envelope vault.Envelope
-	err      error
-	saves    int
+	binding   vault.Binding
+	envelope  vault.Envelope
+	err       error
+	saves     int
+	snapshot  binance.Snapshot
+	listAfter int64
 }
 
 func (s *snapshotStore) ListReadAccounts(context.Context, string) ([]database.ReadAccount, error) {
@@ -32,12 +34,13 @@ func (s *snapshotStore) SaveReadSnapshot(context.Context, string, string, binanc
 	return s.err
 }
 func (s *snapshotStore) LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error) {
-	return database.StoredSnapshot{}, s.err
+	return database.StoredSnapshot{Snapshot: s.snapshot}, s.err
 }
 func (s *snapshotStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
 	return database.StoredComparison{}, s.err
 }
-func (s *snapshotStore) ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error) {
+func (s *snapshotStore) ListUserEvents(_ context.Context, _ string, _ string, after int64, _ int) ([]database.StoredEvent, bool, error) {
+	s.listAfter = after
 	return nil, false, s.err
 }
 func (s *snapshotStore) LatestStreamState(context.Context, string, string) (database.StreamState, error) {
@@ -52,6 +55,17 @@ type snapshotReader struct {
 func (r *snapshotReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {
 	r.calls++
 	return binance.Snapshot{Source: "binance-production"}, r.err
+}
+
+func TestReconcileUsesSnapshotExchangeWatermarkAsBoundary(t *testing.T) {
+	store := &snapshotStore{snapshot: binance.Snapshot{CapturedAtMs: 1700000000000}}
+	service := &Service{Store: store}
+	if _, err := service.Reconcile(context.Background(), "synthetic", "00000000-0000-4000-8000-000000000001"); err != nil {
+		t.Fatal(err)
+	}
+	if store.listAfter != 1700000000000 {
+		t.Fatal("reconcile did not use the snapshot exchange watermark as the event boundary")
+	}
 }
 
 func TestSnapshotRequiresSuccessfulPersistenceAndNeverFallsBack(t *testing.T) {

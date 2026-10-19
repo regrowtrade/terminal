@@ -115,7 +115,10 @@ func (s *Service) Reconcile(ctx context.Context, hash, account string) (reconcil
 	if err != nil {
 		return reconcile.Report{}, err
 	}
-	stored, truncated, err := s.Store.ListUserEvents(ctx, hash, account, 0, 200)
+	// The snapshot's exchange-clock watermark is the boundary: only events with
+	// event_time strictly after it happened after the snapshot and may be
+	// layered on top. Older events are already reflected in the snapshot.
+	stored, truncated, err := s.Store.ListUserEvents(ctx, hash, account, snapshot.Snapshot.CapturedAtMs, 200)
 	if err != nil {
 		return reconcile.Report{}, err
 	}
