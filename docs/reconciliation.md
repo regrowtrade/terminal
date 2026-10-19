@@ -36,4 +36,10 @@ Aplicar la migración `0007_stream_state.sql` y los grants antes de actualizar t
 
 ## Qué falta
 
-Buffering de eventos durante una lectura para cerrar la ventana entre `capturedAt` y el primer evento post-snapshot, ordenación/antigüedad por evento frente al reloj del exchange, consulta de estados ambiguos, deduplicación durable de fills con tradeId como clave primaria y el monitor de cuenta sincronizado (UI). La ejecución y las automatizaciones siguen bloqueadas.
+- [x] Buffering en memoria de eventos durante una lectura: `connections.SnapshotGate` retiene los eventos que llegan mientras una snapshot REST está en vuelo y los vuelca al journal al confirmar la lectura, de modo que ninguno se pierde al cruzar `capturedAt`. Es una primitiva de proceso; la durabilidad sigue estando en el journal.
+- [ ] Ordenación/antigüedad por evento frente al reloj del exchange (watermark de corte para que la reconciliación superponga solo eventos posteriores a la lectura).
+- [ ] Consulta de estados ambiguos.
+- [ ] Deduplicación durable de fills con tradeId como clave primaria.
+- [ ] Monitor de cuenta sincronizado (UI).
+
+La ejecución y las automatizaciones siguen bloqueadas.
