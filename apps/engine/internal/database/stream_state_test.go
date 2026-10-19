@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestStreamStateRejectsInvalidInputBeforeDatabase(t *testing.T) {
@@ -54,12 +55,31 @@ func testStreamStateLifecycle(t *testing.T, ctx context.Context, store *Store, h
 	if err != nil || state.Connected || !state.GappedSinceSnapshot {
 		t.Fatal("disconnect did not mark a gap")
 	}
-	// A fresh snapshot resets the gap but not the watermark.
-	if err := store.SaveReadSnapshot(ctx, hash, account, syntheticReadSnapshot()); err != nil {
+	// The snapshot/comparison lifecycle has already advanced this account's
+	// baseline. Derive test timestamps from it, not from the wall clock.
+	latest, err := store.LatestReadSnapshot(ctx, hash, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := latest.Snapshot
+	stale.StartedAt = stale.StartedAt.Add(-time.Second)
+	stale.CapturedAt = stale.CapturedAt.Add(-time.Second)
+	if err := store.SaveReadSnapshot(ctx, hash, account, stale); !errors.Is(err, ErrSnapshotInvalid) {
+		t.Fatal("stale snapshot was not rejected")
+	}
+	state, err = store.LatestStreamState(ctx, hash, account)
+	if err != nil || state.Connected || !state.GappedSinceSnapshot || state.LastEventTime != 100 {
+		t.Fatal("rejected snapshot changed continuity")
+	}
+	// Only a successfully saved newer snapshot resets the gap, not the watermark.
+	fresh := latest.Snapshot
+	fresh.StartedAt = fresh.StartedAt.Add(time.Second)
+	fresh.CapturedAt = fresh.CapturedAt.Add(time.Second)
+	if err := store.SaveReadSnapshot(ctx, hash, account, fresh); err != nil {
 		t.Fatal(err)
 	}
 	state, err = store.LatestStreamState(ctx, hash, account)
-	if err != nil || state.GappedSinceSnapshot || state.LastEventTime != 100 {
+	if err != nil || state.Connected || state.GappedSinceSnapshot || state.LastEventTime != 100 {
 		t.Fatal("snapshot did not reset the gap")
 	}
 	// A different owner cannot read stream state.
