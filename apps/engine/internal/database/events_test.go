@@ -82,6 +82,14 @@ func testUserEventLifecycle(t *testing.T, ctx context.Context, store *Store, has
 		events[0].Event.OrderUpdate.OrderID != "9007199254740993" || events[1].Event.AccountUpdate.Balances[0].WalletBalance != "122624.12345678" {
 		t.Fatal("event journal not ordered or preserved decimals")
 	}
+	events, truncated, err = store.ListUserEvents(ctx, hash, account, 1000, 200)
+	if err != nil || truncated || len(events) != 1 || events[0].Event.EventTime != 2000 {
+		t.Fatal("journal did not apply the strict exchange watermark")
+	}
+	events, truncated, err = store.ListUserEvents(ctx, hash, account, 2000, 200)
+	if err != nil || truncated || events == nil || len(events) != 0 {
+		t.Fatal("journal replayed events at or before the watermark")
+	}
 	// A different owner cannot read the journal.
 	if err := store.WithOwner(ctx, "00000000-0000-4000-8000-000000000002", func(tx *sql.Tx) error {
 		var count int

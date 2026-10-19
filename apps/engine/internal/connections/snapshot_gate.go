@@ -57,19 +57,26 @@ func (g *SnapshotGate) begin(account string) func() {
 	a := g.account(account)
 	a.readers++
 	g.mu.Unlock()
+	var once sync.Once
 	return func() {
-		g.mu.Lock()
-		a.readers--
-		var flushed []binance.UserEvent
-		if a.readers == 0 {
-			flushed = a.pending
-			a.pending = nil
-		}
-		journal := a.journal
-		g.mu.Unlock()
-		if len(flushed) > 0 && journal != nil {
-			journal(flushed)
-		}
+		once.Do(func() {
+			g.mu.Lock()
+			a.readers--
+			var flushed []binance.UserEvent
+			if a.readers == 0 {
+				flushed = a.pending
+				a.pending = nil
+			}
+			journal := a.journal
+			g.mu.Unlock()
+			// SaveUserEvents accepts at most 1000 events per transaction. A busy
+			// snapshot window must not turn into a rejected oversized batch.
+			for len(flushed) > 0 && journal != nil {
+				n := min(len(flushed), 1000)
+				journal(flushed[:n])
+				flushed = flushed[n:]
+			}
+		})
 	}
 }
 
@@ -81,7 +88,7 @@ func (g *SnapshotGate) begin(account string) func() {
 func (g *SnapshotGate) ingest(account string, event binance.UserEvent) bool {
 	g.mu.Lock()
 	a := g.accounts[account]
-	if a != nil && a.readers > 0 {
+	if a != nil && a.journal != nil && a.readers > 0 {
 		a.pending = append(a.pending, event)
 		g.mu.Unlock()
 		return true

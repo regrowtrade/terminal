@@ -95,11 +95,55 @@ func TestGateIngestReturnsFalseWithoutJournal(t *testing.T) {
 	}
 }
 
-func TestGateCommitWithoutJournalIsSafe(t *testing.T) {
+func TestGateDoesNotClaimBufferedEventsWithoutJournal(t *testing.T) {
 	gate := NewSnapshotGate()
 	commit := gate.begin("account-1")
+	if gate.ingest("account-1", accountUpdate(1)) {
+		t.Fatal("event without a journaling sink did not fall back to the caller")
+	}
+	commit()
+}
+
+func TestGateCommitIsIdempotent(t *testing.T) {
+	gate := NewSnapshotGate()
+	spy := &journalSpy{}
+	gate.setJournal("account-1", spy.record)
+	commit := gate.begin("account-1")
 	gate.ingest("account-1", accountUpdate(1))
-	commit() // must not panic or drop into the void in a way that matters here
+	commit()
+	commit()
+	next := gate.begin("account-1")
+	gate.ingest("account-1", accountUpdate(2))
+	if spy.count() != 1 {
+		t.Fatal("duplicate commit corrupted the next read's buffer")
+	}
+	next()
+	if spy.count() != 2 {
+		t.Fatal("next read did not drain its event")
+	}
+}
+
+func TestGateDrainsWithinDatabaseBatchLimit(t *testing.T) {
+	gate := NewSnapshotGate()
+	spy := &journalSpy{}
+	var sizes []int
+	gate.setJournal("account-1", func(events []binance.UserEvent) {
+		sizes = append(sizes, len(events))
+		spy.record(events)
+	})
+	commit := gate.begin("account-1")
+	for i := range 2001 {
+		gate.ingest("account-1", accountUpdate(int64(i+1)))
+	}
+	commit()
+	if len(sizes) != 3 || sizes[0] != 1000 || sizes[1] != 1000 || sizes[2] != 1 || spy.count() != 2001 {
+		t.Fatal("buffer exceeded the durable batch limit or dropped events", sizes)
+	}
+	for i, eventTime := range spy.times() {
+		if eventTime != int64(i+1) {
+			t.Fatal("batch split reordered events")
+		}
+	}
 }
 
 func TestGateIsolationAcrossAccounts(t *testing.T) {
