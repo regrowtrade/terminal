@@ -10,6 +10,10 @@ import {
 } from "./connections-schema";
 import { eventsResponseSchema } from "./events-schema";
 import { reconciliationReportSchema } from "./reconciliation-schema";
+import {
+  orderLookupRequestSchema,
+  orderLookupSchema,
+} from "./order-lookup-schema";
 import { boundedText } from "./request";
 import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
@@ -23,6 +27,7 @@ const responseSchemas = {
   comparison: storedComparisonSchema,
   events: eventsResponseSchema,
   reconcile: reconciliationReportSchema,
+  order: orderLookupSchema,
 };
 function json(body: unknown, status: number) {
   return Response.json(body, {
@@ -33,7 +38,13 @@ function json(body: unknown, status: number) {
 export async function connectionRequest(
   request: Request,
   operation:
-    "list" | "snapshot" | "latest" | "comparison" | "events" | "reconcile",
+    | "list"
+    | "snapshot"
+    | "latest"
+    | "comparison"
+    | "events"
+    | "reconcile"
+    | "order",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -60,19 +71,21 @@ export async function connectionRequest(
   const parsed = (
     operation === "list"
       ? z.object({}).strict()
-      : operation === "events"
-        ? z
-            .object({
-              accountId: z.uuid(),
-              after: z
-                .number()
-                .int()
-                .nonnegative()
-                .max(Number.MAX_SAFE_INTEGER)
-                .optional(),
-            })
-            .strict()
-        : z.object({ accountId: z.uuid() }).strict()
+      : operation === "order"
+        ? orderLookupRequestSchema
+        : operation === "events"
+          ? z
+              .object({
+                accountId: z.uuid(),
+                after: z
+                  .number()
+                  .int()
+                  .nonnegative()
+                  .max(Number.MAX_SAFE_INTEGER)
+                  .optional(),
+              })
+              .strict()
+          : z.object({ accountId: z.uuid() }).strict()
   ).safeParse(input);
   if (!parsed.success) return json({ error: "Solicitud inválida." }, 400);
   const cookie = (await cookies()).get(cookieName())?.value;
@@ -117,9 +130,23 @@ export async function connectionRequest(
       return json({ error: errors[status] }, status);
     }
     const body: unknown = JSON.parse(
-      await boundedText(response, 8 * 1024 * 1024),
+      await boundedText(
+        response,
+        operation === "order" ? 16 * 1024 : 8 * 1024 * 1024,
+      ),
     );
-    return json(responseSchemas[operation].parse(body), 200);
+    const data = responseSchemas[operation].parse(body);
+    if (operation === "order") {
+      const sent = orderLookupRequestSchema.parse(parsed.data);
+      const received = orderLookupSchema.parse(data);
+      if (
+        received.query.symbol !== sent.symbol ||
+        received.query.orderId !== sent.orderId ||
+        received.query.clientOrderId !== sent.clientOrderId
+      )
+        throw new Error("Order query mismatch");
+    }
+    return json(data, 200);
   } catch {
     return json(
       {

@@ -289,6 +289,42 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/order:
+    post:
+      operationId: lookupBinanceNormalOrder
+      description: Explicit signed GET of a normal LIMIT/MARKET order by symbol and exactly one identifier. Authenticates session and account ownership before decrypting, then rechecks session/credential ownership when persisting evidence with audit. Does not submit, cancel, synthesize fills, change snapshots/continuity or enable execution. Exchange code -2013 returns a durable unresolved observation (200), never evidence that an order did not exist. Conditional/algo lookup and automatic recovery remain unsupported. Web proxy accepts the same fields except tokenHash, which it derives server-side; all responses are no-store.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId, symbol]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+                orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+                clientOrderId:
+                  { $ref: "#/components/schemas/NormalClientOrderId" }
+              oneOf:
+                - required: [orderId]
+                - required: [clientOrderId]
+      responses:
+        "200":
+          description: Observed order or unresolved absence, returned only after persistence succeeds. This is not a reconciled account state or an execution acknowledgement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinanceOrderLookup" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   requestBodies:
     SessionDigest:
@@ -340,6 +376,108 @@ components:
             properties:
               error: { type: string }
   schemas:
+    NormalClientOrderId:
+      type: string
+      pattern: "^[.A-Z:/a-z0-9_-]{1,36}$"
+      description: A client ID is only unique among open orders and may be reused. An observation does not establish strategy ownership or prove the identity of a historical intention.
+    NormalOrderQuery:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientOrderId: { $ref: "#/components/schemas/NormalClientOrderId" }
+      oneOf:
+        - required: [orderId]
+        - required: [clientOrderId]
+    QueriedNormalOrder:
+      type: object
+      additionalProperties: false
+      description: Exact decimal strings and int64 ID string. Quantity must be positive and executedQty <= origQty; NEW/REJECTED require zero executed, PARTIALLY_FILLED requires 0 < executed < origQty, FILLED requires equality. Positive executedQty requires positive avgPrice, otherwise avgPrice must be zero. LIMIT requires positive price. Symbol and the selected identifier must match the query. This is cumulative quantity, not a trade/fill ledger.
+      required:
+        [
+          orderId,
+          clientOrderId,
+          symbol,
+          side,
+          positionSide,
+          type,
+          status,
+          origQty,
+          executedQty,
+          price,
+          avgPrice,
+          reduceOnly,
+          closePosition,
+          updateTime,
+        ]
+      properties:
+        orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientOrderId: { $ref: "#/components/schemas/NormalClientOrderId" }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        type: { enum: [LIMIT, MARKET] }
+        status:
+          {
+            enum:
+              [
+                NEW,
+                PARTIALLY_FILLED,
+                FILLED,
+                CANCELED,
+                EXPIRED,
+                EXPIRED_IN_MATCH,
+                REJECTED,
+                PENDING_CANCEL,
+              ],
+          }
+        origQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        executedQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        avgPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        reduceOnly: { type: boolean }
+        closePosition: { const: false }
+        updateTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    BinanceOrderLookup:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          source,
+          mode,
+          executionReady,
+          startedAt,
+          checkedAt,
+          query,
+          outcome,
+          reason,
+          order,
+        ]
+      description: Local query interval, 0 <= checkedAt - startedAt <= 18 seconds. Not an atomic account snapshot. No automatic retry or historical reconstruction.
+      properties:
+        source: { const: binance-production }
+        mode: { const: read_only }
+        executionReady: { const: false }
+        startedAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+        query: { $ref: "#/components/schemas/NormalOrderQuery" }
+        outcome: { enum: [observed, unresolved] }
+        reason: { enum: ["", exchange_not_found] }
+        order:
+          oneOf:
+            - { $ref: "#/components/schemas/QueriedNormalOrder" }
+            - { type: "null" }
+      oneOf:
+        - properties:
+            outcome: { const: observed }
+            reason: { const: "" }
+            order: { $ref: "#/components/schemas/QueriedNormalOrder" }
+        - properties:
+            outcome: { const: unresolved }
+            reason: { const: exchange_not_found }
+            order: { type: "null" }
     StoredObservationComparison:
       type: object
       additionalProperties: false

@@ -28,4 +28,6 @@ El PR #7 (`feat/connected-account-views`) se creó desde `9cccd25` y se actualiz
 
 Para futuras entregas dependientes, una vez integrado el PR anterior, cambiar la base del siguiente PR abierto a `main` y comprobar otra vez diff/CI **antes** de mergearlo. Crear las nuevas ramas desde `main` actualizado cuando todas sus dependencias estén allí. No considerar una entrega disponible en `main` solo porque GitHub marque su PR como mergeado.
 
-El propietario ya integró el PR #9 (base de reconciliación, incluida la corrección de CI PostgreSQL `b1136fb`) en `main`. El PR #10 (`feat/snapshot-event-buffering`) incorpora ese `main` mediante merge sin reescritura y cambia su base a `main`; buffering, fills durables y transición de snapshots antiguos siguen en ese PR, no en `main` hasta su aprobación e integración.
+El propietario ya integró los PRs #9 (base de reconciliación, incluida la corrección de CI PostgreSQL `b1136fb`) y #10 (`feat/snapshot-event-buffering`) en `main`. Buffering, fills durables y transición administrativa de snapshots antiguos están allí desde `dd6e99d`; no habilitan trading.
+
+`feat/binance-order-observations` parte de ese `main` actualizado: consulta manual de órdenes normales por ID/cliente y evidencia durable. Mantiene separadas la observación y la recuperación automática todavía pendiente. Sin despliegue, migraciones remotas ni merge por el agente.

@@ -24,9 +24,11 @@ type Store interface {
 	ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error)
 	LatestStreamState(context.Context, string, string) (database.StreamState, error)
 	ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error)
+	SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
+	LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error)
 }
 type Service struct {
 	Store  Store
@@ -80,6 +82,36 @@ func (s *Service) Latest(ctx context.Context, hash, account string) (database.St
 		return database.StoredSnapshot{}, ErrDisabled
 	}
 	return s.Store.LatestReadSnapshot(ctx, hash, account)
+}
+
+// LookupOrder is an explicit read of a normal order. It never mutates a saved
+// snapshot, resets stream gaps, synthesizes fills or enables execution.
+func (s *Service) LookupOrder(ctx context.Context, hash, account string, query binance.OrderQuery) (binance.OrderLookup, error) {
+	if !query.Valid() {
+		return binance.OrderLookup{}, binance.ErrOrderQuery
+	}
+	if s == nil || s.Store == nil || s.Vault == nil || s.Reader == nil {
+		return binance.OrderLookup{}, ErrDisabled
+	}
+	binding, envelope, err := s.Store.ReadAccountCredential(ctx, hash, account)
+	if err != nil {
+		return binance.OrderLookup{}, err
+	}
+	credentials, err := s.Vault.Open(binding, envelope)
+	if err != nil {
+		return binance.OrderLookup{}, vault.ErrVault
+	}
+	result, err := s.Reader.LookupOrder(ctx, credentials, query)
+	if err != nil {
+		return binance.OrderLookup{}, err
+	}
+	if result.Query != query || binance.ValidateOrderLookup(result) != nil {
+		return binance.OrderLookup{}, binance.ErrResponse
+	}
+	if err := s.Store.SaveOrderObservation(ctx, hash, account, result); err != nil {
+		return binance.OrderLookup{}, err
+	}
+	return result, nil
 }
 
 func (s *Service) Comparison(ctx context.Context, hash, account string) (database.StoredComparison, error) {

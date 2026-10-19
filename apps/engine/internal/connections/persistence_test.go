@@ -63,6 +63,15 @@ type snapshotReader struct {
 	calls int
 }
 
+func (s *snapshotStore) SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error {
+	s.saves++
+	return s.err
+}
+func (r *snapshotReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
+	r.calls++
+	return binance.OrderLookup{}, r.err
+}
+
 func (r *snapshotReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {
 	r.calls++
 	return binance.Snapshot{Source: "binance-production"}, r.err
