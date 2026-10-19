@@ -16,6 +16,7 @@ El destino único es `terminal/`. `../src/rebuymaster`, `../src/hedge-management
 - Lectura Binance USDT manual de cuentas, posiciones, órdenes normales/algo e instrumentos y última observación persistida, incorporadas en `main` con los PRs #4/#5. Sin validación operativa con una cuenta real por el agente.
 - Comparación durable entre observaciones incorporada en `main` con el PR #6: no reemplaza eventos ni reconciliación.
 - Flujo de usuario de solo lectura y journal de eventos privados en `feat/binance-user-data-stream`: recibe `ORDER_TRADE_UPDATE`/`ACCOUNT_UPDATE` con deduplicación y reconexión, pero no reconcilia fills ni establece continuidad. Ver [eventos privados](private-events.md).
+- Base de reconciliación en `feat/reconciliation-foundation`: continuidad durable del flujo y reporte de fills `TRADE` deduplicados sobre la última lectura, con `continuity=established|gapped`. No es un estado reconciliado con el exchange. Ver [reconciliación](reconciliation.md).
 - En el PR #7 (`feat/connected-account-views`), actualizado con `main` después del PR #6: ruta Posiciones de cuenta sin fixtures, con ejemplos opt-in, filtros locales y paginación; conserva la recuperación explícita de comparaciones históricas. Revisión/integración pendientes.
 
 ## Orden y puertas del plan
