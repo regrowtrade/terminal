@@ -17,6 +17,11 @@ type fakeConnections struct {
 	calls int
 }
 
+func (f *fakeConnections) LookupOrder(context.Context, string, string, binance.OrderQuery) (binance.OrderLookup, error) {
+	f.calls++
+	return binance.OrderLookup{}, f.err
+}
+
 func (f *fakeConnections) State(context.Context, string) (connections.State, error) {
 	f.calls++
 	return connections.State{Accounts: []database.ReadAccount{}}, f.err

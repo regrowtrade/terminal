@@ -34,7 +34,7 @@ Solo consulta PostgreSQL: no descifra claves ni contacta Binance, y funciona con
 
 ## Despliegue
 
-Aplicar las migraciones hasta `0009_legacy_snapshot_archives.sql` y los grants antes de actualizar todos los motores; web y motor se actualizan juntos para el endpoint nuevo. Ver [eventos privados](private-events.md) y [roadmap](roadmap.md).
+Aplicar las migraciones hasta `0010_order_observations.sql` y los grants antes de actualizar todos los motores; web y motor se actualizan juntos para el endpoint nuevo. Ver [eventos privados](private-events.md) y [roadmap](roadmap.md).
 
 Las lecturas antiguas sin `capturedAtMs` siguen rechazándose como baseline: no se inventa un reloj del exchange a partir del reloj local. Su transición es explícita y preserva el registro original; ver el procedimiento siguiente. La migración `0008` crea fills y `0009` crea el archivo, pero ninguna mueve datos ni rellena historia automáticamente.
 
@@ -66,11 +66,28 @@ Herramienta administrativa `snapshot-transition`, incluida en la imagen del moto
 
 Probado con PostgreSQL desechable: preservación exacta, comparación NULL, evidencia financiera corrupta sin reinterpretación, huellas obsoletas, confirmaciones concurrentes, rollback si falla la auditoría, permisos/RLS y lectura nueva. No se ha ejecutado sobre Railway ni validado operativamente con claves reales.
 
+## Consulta explícita de una orden normal
+
+En el panel de conexión, tras comprobar la cuenta, «Investigar una orden normal» permite consultar **LIMIT/MARKET** por símbolo USDT y exactamente un `orderId` (string int64 positivo) o `clientOrderId` (hasta 36 caracteres). No admite payloads de órdenes, URLs, claves ni selección de propietario. No hay cargas automáticas, reintentos ni botones de trading. Cambiar cuenta aborta y descarta la consulta en vuelo; editar los criterios retira el resultado anterior.
+
+`POST /api/connections/binance/order` deriva el digest de sesión en el servidor web y llama a `POST /v1/connections/binance/order` con autenticación interna. El motor verifica sesión/propiedad antes de descifrar; comprueba reloj y permisos/IP de lectura en Binance y realiza únicamente `GET /fapi/v1/order` firmado, con selectores validados y el mismo límite/cooldown compartido de las lecturas manuales. Las claves con permisos de trading siguen rechazadas. No hay endpoint genérico ni proxy de URLs suministradas por el usuario.
+
+- `observed`: símbolo e identificador coinciden; estado, cantidades acumuladas y precio medio pasan validación decimal. `FILLED` es el estado declarado de esa orden, **no** un cierre de posición, protección confirmada ni un conjunto de fills del journal.
+- `unresolved` / `exchange_not_found`: Binance respondió HTTP 400 con `-2013`. No se traduce a «nunca existió», «cancelada» o «ejecutada», ni permite reenviar. La retención de Binance puede ocultar órdenes antiguas (p. ej. canceladas/expiradas sin fills); un ID equivocado también devuelve ausencia. Los IDs de cliente pueden reutilizarse después de cerrar una orden: una coincidencia no establece por sí sola propiedad de una intención histórica.
+- Otros errores, respuestas incompletas o discrepancias fallan sin devolver datos parciales, mensajes privados del exchange ni resultados anteriores como actuales.
+
+Cada resultado exitoso —incluida la ausencia no resuelta— se guarda en `binance_order_observations` con timestamps alineados a microsegundos y `account.order_observed` en **una transacción**. Se revalidan sesión y credenciales después de la consulta externa; si falla el guardado o la auditoría, no se devuelve la observación. No se mantiene una transacción abierta mientras se contacta Binance. RLS forzada por propietario y rol runtime con SELECT/INSERT, sin UPDATE/DELETE. El registro no modifica baseline, comparación, continuidad ni fills. Borrar una credencial conserva las observaciones existentes, pero impide nuevas consultas/guardados.
+
+La migración `0010` crea solo esta evidencia; no rellena historia. Aplicarla explícitamente y reaplicar los grants antes de actualizar el motor; no se ejecutó en Railway. La UI muestra únicamente el resultado de su consulta manual, marcado como puntual/no en vivo: **no hay recuperación histórica de estas observaciones por API/UI ni reconciliador automático que las consuma**. La inspección histórica requiere acceso administrativo privado. Todavía faltan consulta algo/condicional, recuperación REST de trades perdidos, enlace con intenciones/estrategias y recuperación segura de estados ambiguos antes de ejecutar.
+
+Referencia: [Binance USDⓈ-M Query Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Query-Order). Las pruebas usan transportes sintéticos y PostgreSQL desechable, nunca claves ni llamadas reales al exchange.
+
 ## Qué falta
 
 - [x] Buffering en memoria de eventos durante una lectura: `connections.SnapshotGate` retiene los eventos que llegan mientras una snapshot REST está en vuelo y los vuelca al journal al confirmar la lectura, de modo que ninguno se pierde al cruzar `capturedAt`. Es una primitiva de proceso; la durabilidad sigue estando en el journal.
 - [x] Watermark de corte por reloj del exchange: la snapshot guarda `capturedAtMs` y la reconciliación consulta solo eventos con `event_time` estrictamente posterior. El corte es una extrapolación lineal del reloj del exchange; no sustituye a una antigüedad exacta por evento ni a una captura REST atómica.
-- [ ] Consulta de estados ambiguos.
+- [x] Primitiva manual de consulta de órdenes normales con evidencia durable y ausencia explícitamente no resuelta.
+- [ ] Recuperación automática de estados ambiguos vinculados a intenciones, consulta algo/condicional y reconstrucción de fills perdidos.
 - [x] Deduplicación durable de fills: `binance_fills` con clave primaria `(accountId, orderId, tradeId)`; la extracción de `TRADE` ocurre al ingestar el journal (`SaveUserEvents`), de modo que las redeliveries at-least-once nunca duplican un fill. No se rellena retroactivamente: los eventos journalizados antes de la migración `0008` no generan filas de fills.
 - [ ] Monitor de cuenta sincronizado (UI).
 

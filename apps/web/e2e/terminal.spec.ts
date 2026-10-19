@@ -4,6 +4,7 @@ import {
   syntheticAccountSnapshot,
 } from "../tests/fixtures/binance";
 import { syntheticComparison } from "../tests/fixtures/comparison";
+import { syntheticOrderLookup } from "../tests/fixtures/order-lookup";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -32,6 +33,7 @@ test("requires login and protects the preview API", async ({
     "comparison",
     "events",
     "reconcile",
+    "order",
   ]) {
     const reading = await request.post(
       `/api/connections/binance/${operation}`,
@@ -222,6 +224,69 @@ test("synthetic read-only orders and filters render without exchange access", as
     .click();
   await expect(page.getByText(/LECTURA GUARDADA · NO ACTUAL/)).toBeVisible();
   await expect(page.getByText(/Recuperada de PostgreSQL/)).toBeVisible();
+});
+
+test("normal-order lookup shows point-in-time evidence and unresolved absence without trading", async ({
+  page,
+}) => {
+  await login(page);
+  const accountId = "00000000-0000-4000-8000-000000000001";
+  await page.route("**/api/connections/binance/list", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        accounts: [
+          {
+            id: accountId,
+            name: "Synthetic",
+            exchange: "binance",
+            environment: "production",
+          },
+        ],
+      },
+    }),
+  );
+  let reads = 0;
+  await page.route("**/api/connections/binance/order", (route) => {
+    reads++;
+    expect(route.request().postDataJSON()).toEqual({
+      accountId,
+      symbol: "BTCUSDT",
+      orderId: "9007199254740993",
+    });
+    const body = syntheticOrderLookup();
+    if (reads > 1) {
+      body.outcome = "unresolved";
+      body.reason = "exchange_not_found";
+      body.order = null;
+    }
+    return route.fulfill({ json: body });
+  });
+  await page.goto("/settings");
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  const panel = page.getByRole("region", { name: "Consulta de orden normal" });
+  await expect(panel).toBeVisible();
+  expect(reads).toBe(0);
+  await panel.getByLabel("Símbolo USDT").fill("BTCUSDT");
+  await panel.getByLabel("Identificador de orden").fill("9007199254740993");
+  await panel.getByRole("button").click();
+  await expect(panel.getByText(/OBSERVACIÓN PUNTUAL GUARDADA/)).toBeVisible();
+  await expect(panel.getByText("90.00000001 / 89.12345678")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await panel.getByRole("button").click();
+  await expect(panel.getByText(/NO RESUELTA/)).toContainText("No reenvíes");
+  await expect(panel.getByText("90.00000001 / 89.12345678")).toHaveCount(0);
+  await expect(
+    panel.getByRole("button", { name: /enviar|cancelar|ejecutar/i }),
+  ).toHaveCount(0);
+  await panel.getByLabel("Identificador de orden").fill("123");
+  await expect(panel.getByText(/NO RESUELTA/)).toHaveCount(0);
 });
 
 test("settings can revoke every existing session", async ({

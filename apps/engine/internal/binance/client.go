@@ -70,6 +70,14 @@ func (c *Client) cooldown(header string) {
 	}
 }
 func (c *Client) get(ctx context.Context, path string, credentials *vault.Credentials, timestamp int64, target any) error {
+	// A single-order read requires explicit validated selectors.
+	if path == "/fapi/v1/order" {
+		return ErrUnavailable
+	}
+	return c.getWithParams(ctx, path, credentials, timestamp, nil, target)
+}
+
+func (c *Client) getWithParams(ctx context.Context, path string, credentials *vault.Credentials, timestamp int64, params url.Values, target any) error {
 	origin := "https://fapi.binance.com"
 	public := false
 	max := 2 * 1024 * 1024
@@ -80,9 +88,23 @@ func (c *Client) get(ctx context.Context, path string, credentials *vault.Creden
 		public = true
 		max = 8 * 1024 * 1024
 	case "/fapi/v3/account", "/fapi/v3/positionRisk", "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders":
+	case "/fapi/v1/order":
+		q := OrderQuery{Symbol: params.Get("symbol"), OrderID: params.Get("orderId"), ClientOrderID: params.Get("origClientOrderId")}
+		if !q.Valid() || len(params) != 2 {
+			return ErrOrderQuery
+		}
+		for _, values := range params {
+			if len(values) != 1 {
+				return ErrOrderQuery
+			}
+		}
+		max = 64 * 1024
 	case "/sapi/v1/account/apiRestrictions":
 		origin = "https://api.binance.com"
 	default:
+		return ErrUnavailable
+	}
+	if path != "/fapi/v1/order" && len(params) != 0 {
 		return ErrUnavailable
 	}
 	// Public metadata never receives keys; private reads always require them.
@@ -95,6 +117,9 @@ func (c *Client) get(ctx context.Context, path string, credentials *vault.Creden
 			return ErrPermissions
 		}
 		q := url.Values{"recvWindow": {"5000"}, "timestamp": {strconv.FormatInt(timestamp, 10)}}
+		for key, values := range params {
+			q[key] = append([]string(nil), values...)
+		}
 		encoded := q.Encode()
 		mac := hmac.New(sha256.New, []byte(credentials.APISecret))
 		mac.Write([]byte(encoded))
@@ -119,12 +144,23 @@ func (c *Client) get(ctx context.Context, path string, credentials *vault.Creden
 	if response.StatusCode == 401 || response.StatusCode == 403 {
 		return ErrPermissions
 	}
-	if response.StatusCode != 200 {
+	if response.StatusCode != 200 && path != "/fapi/v1/order" {
 		return ErrUnavailable
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, int64(max)+1))
 	if err != nil || len(body) > max {
 		return ErrResponse
+	}
+	if response.StatusCode != 200 {
+		// Only this documented code on the normal-order query means no order
+		// was returned. It is not evidence that an order never existed.
+		var failure struct {
+			Code int `json:"code"`
+		}
+		if path == "/fapi/v1/order" && response.StatusCode == 400 && json.Unmarshal(body, &failure) == nil && failure.Code == -2013 {
+			return errOrderNotFound
+		}
+		return ErrUnavailable
 	}
 	if json.Unmarshal(body, target) != nil {
 		return ErrResponse

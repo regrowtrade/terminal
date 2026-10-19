@@ -926,6 +926,35 @@ td small {
 .binance-readonly .exchange-row {
   flex-wrap: wrap;
 }
+.order-lookup {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+  min-width: 0;
+}
+.order-lookup label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.order-lookup input {
+  width: 100%;
+  min-width: 0;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+}
+.order-lookup dt {
+  margin-top: 10px;
+  color: var(--muted);
+}
+.order-lookup dd {
+  margin-left: 0;
+  overflow-wrap: anywhere;
+}
 .settings-card .card-heading {
   padding: 22px 0;
   color: #9bad91;

@@ -97,6 +97,7 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	testUserEventLifecycle(t, ctx, store, hash, id)
 	testStreamStateLifecycle(t, ctx, store, hash, id)
 	testFillLifecycle(t, ctx, store, runtimeURI, hash, id)
+	t.Run("order_observations", func(t *testing.T) { testOrderObservationLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("legacy_snapshot_transition", func(t *testing.T) {
 		testLegacySnapshotTransition(t, ctx, store, admin, adminURI, runtimeURI, hash, id)
 	})
@@ -114,6 +115,13 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	}
 	if err := store.SaveReadSnapshot(ctx, hash, id, syntheticReadSnapshot()); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can still save readings")
+	}
+	if err := store.SaveOrderObservation(ctx, hash, id, syntheticOrderLookup()); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("removed credential can save order observations")
+	}
+	var observations int
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM binance_order_observations WHERE account_id=$1`, id).Scan(&observations); err != nil || observations != 2 {
+		t.Fatal("credential deletion removed order evidence")
 	}
 	if err := store.RevokeSession(ctx, hash, false); err != nil {
 		t.Fatal("could not revoke resource test session")

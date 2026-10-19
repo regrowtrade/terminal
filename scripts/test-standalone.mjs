@@ -305,6 +305,28 @@ try {
       503,
       "No exchange read can be triggered in this test environment.",
     );
+    const disabledOrder = await fetch(
+      `${origin}/api/connections/binance/order`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          Cookie: setCookie.split(";")[0],
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountId: "00000000-0000-4000-8000-000000000001",
+          symbol: "BTCUSDT",
+          orderId: "9007199254740993",
+        }),
+      },
+    );
+    assert.equal(
+      disabledOrder.status,
+      503,
+      "The normal-order lookup must remain disabled, without any exchange call.",
+    );
+    assert.equal(disabledOrder.headers.get("cache-control"), "no-store");
     const secondLogin = await fetch(`${origin}/api/auth/login`, {
       method: "POST",
       redirect: "manual",

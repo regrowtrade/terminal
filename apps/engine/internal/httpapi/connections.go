@@ -21,10 +21,11 @@ type ConnectionService interface {
 	Comparison(context.Context, string, string) (database.StoredComparison, error)
 	Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error)
 	Reconcile(context.Context, string, string) (reconcile.Report, error)
+	LookupOrder(context.Context, string, string, binance.OrderQuery) (binance.OrderLookup, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {
-	for _, operation := range []string{"list", "snapshot", "latest", "comparison", "events", "reconcile"} {
+	for _, operation := range []string{"list", "snapshot", "latest", "comparison", "events", "reconcile", "order"} {
 		mux.HandleFunc("POST /v1/connections/binance/"+operation, func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r, token) {
 				respond(w, 401, map[string]string{"error": "No autorizado"})
@@ -37,17 +38,34 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 			r.Body = http.MaxBytesReader(w, r.Body, 1024)
 			defer r.Body.Close()
 			var input struct {
-				TokenHash string `json:"tokenHash"`
-				AccountID string `json:"accountId,omitempty"`
-				After     int64  `json:"after,omitempty"`
+				TokenHash     string          `json:"tokenHash"`
+				AccountID     string          `json:"accountId,omitempty"`
+				After         int64           `json:"after,omitempty"`
+				Symbol        json.RawMessage `json:"symbol,omitempty"`
+				OrderID       json.RawMessage `json:"orderId,omitempty"`
+				ClientOrderID json.RawMessage `json:"clientOrderId,omitempty"`
 			}
 			d := json.NewDecoder(r.Body)
 			d.DisallowUnknownFields()
-			if d.Decode(&input) != nil || d.Decode(&struct{}{}) != io.EOF ||
+			decodeErr := d.Decode(&input)
+			var query binance.OrderQuery
+			validOrderFields := true
+			for _, field := range []struct {
+				raw   json.RawMessage
+				value *string
+			}{
+				{input.Symbol, &query.Symbol}, {input.OrderID, &query.OrderID}, {input.ClientOrderID, &query.ClientOrderID},
+			} {
+				if len(field.raw) > 0 && (operation != "order" || json.Unmarshal(field.raw, field.value) != nil || *field.value == "") {
+					validOrderFields = false
+				}
+			}
+			if decodeErr != nil || d.Decode(&struct{}{}) != io.EOF ||
 				len(input.TokenHash) != 64 || strings.Trim(input.TokenHash, "0123456789abcdef") != "" ||
 				(operation == "list" && (input.AccountID != "" || input.After != 0)) ||
 				(operation != "list" && input.AccountID == "") ||
-				(operation != "events" && input.After != 0) || (operation == "events" && input.After < 0) {
+				(operation != "events" && input.After != 0) || (operation == "events" && input.After < 0) ||
+				!validOrderFields || (operation == "order" && !query.Valid()) {
 				respond(w, 400, map[string]string{"error": "Solicitud inválida"})
 				return
 			}
@@ -74,10 +92,14 @@ func registerConnections(mux *http.ServeMux, token string, service ConnectionSer
 				}
 			} else if operation == "reconcile" {
 				data, err = service.Reconcile(ctx, input.TokenHash, input.AccountID)
+			} else if operation == "order" {
+				data, err = service.LookupOrder(ctx, input.TokenHash, input.AccountID, query)
 			} else {
 				data, err = service.Snapshot(ctx, input.TokenHash, input.AccountID)
 			}
 			switch {
+			case errors.Is(err, binance.ErrOrderQuery):
+				respond(w, 400, map[string]string{"error": binance.ErrOrderQuery.Error()})
 			case errors.Is(err, database.ErrSessionInvalid):
 				respond(w, 401, map[string]string{"error": "Sesión no válida"})
 			case errors.Is(err, database.ErrAccountMissing):

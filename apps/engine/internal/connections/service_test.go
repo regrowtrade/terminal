@@ -38,6 +38,18 @@ func (s deniedStore) ListFills(context.Context, string, string, int64, int) ([]b
 
 type neverReader struct{ t *testing.T }
 
+func (s deniedStore) SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error {
+	return s.err
+}
+func (r neverReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
+	r.t.Fatal("unauthorized order query reached exchange")
+	return binance.OrderLookup{}, nil
+}
+func (r gateReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
+	r.t.Fatal("unexpected order query")
+	return binance.OrderLookup{}, nil
+}
+
 func (r neverReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {
 	r.t.Fatal("unauthorized request reached exchange reader")
 	return binance.Snapshot{}, nil
