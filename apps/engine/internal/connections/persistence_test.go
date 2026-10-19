@@ -40,6 +40,9 @@ func (s *snapshotStore) LatestReadComparison(context.Context, string, string) (d
 func (s *snapshotStore) ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error) {
 	return nil, false, s.err
 }
+func (s *snapshotStore) LatestStreamState(context.Context, string, string) (database.StreamState, error) {
+	return database.StreamState{}, s.err
+}
 
 type snapshotReader struct {
 	err   error

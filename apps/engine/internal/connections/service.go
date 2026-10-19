@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regrow/engine/internal/binance"
 	"regrow/engine/internal/database"
+	"regrow/engine/internal/reconcile"
 	"regrow/engine/internal/vault"
 )
 
@@ -21,6 +22,7 @@ type Store interface {
 	LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error)
 	LatestReadComparison(context.Context, string, string) (database.StoredComparison, error)
 	ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error)
+	LatestStreamState(context.Context, string, string) (database.StreamState, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -84,4 +86,34 @@ func (s *Service) Events(ctx context.Context, hash, account string, after int64)
 		return nil, false, ErrDisabled
 	}
 	return s.Store.ListUserEvents(ctx, hash, account, after, 200)
+}
+
+// Reconcile layers the deduplicated, normalized event stream over the latest
+// saved snapshot and reports stream continuity. It is read-only and available
+// with the live reader disabled; it never infers fills from absence or enables
+// execution. When the stream has disconnected since the snapshot, continuity is
+// gapped and the event-derived view is explicitly incomplete.
+func (s *Service) Reconcile(ctx context.Context, hash, account string) (reconcile.Report, error) {
+	if s == nil || s.Store == nil {
+		return reconcile.Report{}, ErrDisabled
+	}
+	snapshot, err := s.Store.LatestReadSnapshot(ctx, hash, account)
+	if err != nil {
+		return reconcile.Report{}, err
+	}
+	state, err := s.Store.LatestStreamState(ctx, hash, account)
+	if err != nil {
+		return reconcile.Report{}, err
+	}
+	stored, truncated, err := s.Store.ListUserEvents(ctx, hash, account, 0, 200)
+	if err != nil {
+		return reconcile.Report{}, err
+	}
+	events := make([]binance.UserEvent, 0, len(stored))
+	for _, e := range stored {
+		events = append(events, e.Event)
+	}
+	report := reconcile.Reconcile(snapshot.Snapshot, events, state.Connected && !state.GappedSinceSnapshot)
+	report.EventsTruncated = truncated
+	return report, nil
 }
