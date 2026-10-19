@@ -13,7 +13,7 @@ import (
 
 func sample() binance.Snapshot {
 	now := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
-	return binance.Snapshot{Source: "binance-production", Mode: "read_only", Consistency: "rest_non_atomic", StartedAt: now.Add(-time.Second), CapturedAt: now,
+	return binance.Snapshot{Source: "binance-production", Mode: "read_only", Consistency: "rest_non_atomic", StartedAt: now.Add(-time.Second), CapturedAt: now, CapturedAtMs: now.UnixMilli(),
 		Assets:      []binance.Asset{{Asset: "USDT", WalletBalance: "100.00000001", UnrealizedProfit: "2", AvailableBalance: "80"}},
 		Positions:   []binance.Position{{Symbol: "BTCUSDT", Side: "LONG", Quantity: "1.000", EntryPrice: "100", MarkPrice: "102", UnrealizedProfit: "2", LiquidationPrice: "50"}},
 		OpenOrders:  []binance.Order{{ID: "9007199254740993", ClientID: "synthetic-limit", Symbol: "BTCUSDT", Side: "BUY", PositionSide: "LONG", Type: "LIMIT", Status: "NEW", Quantity: "2", Executed: "0", Price: "90", StopPrice: "0", WorkingType: "CONTRACT_PRICE", UpdateTime: 1750514941540}},

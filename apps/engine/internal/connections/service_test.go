@@ -32,6 +32,9 @@ func (s deniedStore) ListUserEvents(context.Context, string, string, int64, int)
 func (s deniedStore) LatestStreamState(context.Context, string, string) (database.StreamState, error) {
 	return database.StreamState{}, s.err
 }
+func (s deniedStore) ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error) {
+	return nil, 0, false, s.err
+}
 
 type neverReader struct{ t *testing.T }
 
@@ -39,6 +42,40 @@ func (r neverReader) Snapshot(context.Context, vault.Credentials) (binance.Snaps
 	r.t.Fatal("unauthorized request reached exchange reader")
 	return binance.Snapshot{}, nil
 }
+
+// gateReader emits a synthetic event into the gate while the read is in flight,
+// simulating a concurrent stream event that must be buffered, not dropped.
+type gateReader struct {
+	t       *testing.T
+	gate    *SnapshotGate
+	account string
+}
+
+func (r gateReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {
+	if !r.gate.ingest(r.account, accountUpdate(9)) {
+		r.t.Fatal("event arriving during the read was not buffered")
+	}
+	return binance.Snapshot{Source: "binance-production"}, nil
+}
+
+func TestSnapshotBuffersConcurrentEventsThroughGate(t *testing.T) {
+	ring, _, binding, envelope := sealedAccount(t)
+	store := &snapshotStore{binding: binding, envelope: envelope}
+	gate := NewSnapshotGate()
+	spy := &journalSpy{}
+	gate.setJournal(binding.AccountID, spy.record)
+	service := &Service{Store: store, Vault: ring, Reader: gateReader{t: t, gate: gate, account: binding.AccountID}, Gate: gate}
+	if _, err := service.Snapshot(context.Background(), "synthetic", binding.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if store.saves != 1 {
+		t.Fatal("snapshot was not persisted")
+	}
+	if spy.count() != 1 || spy.times()[0] != 9 {
+		t.Fatal("event arriving during the read was not flushed on commit")
+	}
+}
+
 func TestDisabledOrUnauthorizedCannotDecryptOrRead(t *testing.T) {
 	s := &Service{Store: deniedStore{err: database.ErrSessionInvalid}, Reader: neverReader{t}}
 	if _, err := s.State(context.Background(), "forged"); !errors.Is(err, database.ErrSessionInvalid) {

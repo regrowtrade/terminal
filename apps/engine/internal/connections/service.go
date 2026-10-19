@@ -23,6 +23,7 @@ type Store interface {
 	LatestReadComparison(context.Context, string, string) (database.StoredComparison, error)
 	ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error)
 	LatestStreamState(context.Context, string, string) (database.StreamState, error)
+	ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -31,6 +32,9 @@ type Service struct {
 	Store  Store
 	Vault  *vault.Keyring
 	Reader Reader
+	// Gate buffers events that arrive while a snapshot read is in flight so
+	// they are not lost across the capturedAt boundary. Optional.
+	Gate *SnapshotGate
 }
 
 func (s *Service) State(ctx context.Context, hash string) (State, error) {
@@ -52,6 +56,13 @@ func (s *Service) Snapshot(ctx context.Context, hash, account string) (binance.S
 	if err != nil {
 		return binance.Snapshot{}, vault.ErrVault
 	}
+	// Buffer events during the read so the monitor's journal never races the
+	// snapshot save and no event straddling the boundary is dropped.
+	commit := func() {}
+	if s.Gate != nil {
+		commit = s.Gate.begin(account)
+	}
+	defer commit()
 	snapshot, err := s.Reader.Snapshot(ctx, credentials)
 	if err != nil {
 		return binance.Snapshot{}, err
@@ -105,7 +116,10 @@ func (s *Service) Reconcile(ctx context.Context, hash, account string) (reconcil
 	if err != nil {
 		return reconcile.Report{}, err
 	}
-	stored, truncated, err := s.Store.ListUserEvents(ctx, hash, account, 0, 200)
+	// The snapshot's exchange-clock watermark is the boundary: only events with
+	// event_time strictly after it happened after the snapshot and may be
+	// layered on top. Older events are already reflected in the snapshot.
+	stored, truncated, err := s.Store.ListUserEvents(ctx, hash, account, snapshot.Snapshot.CapturedAtMs, 200)
 	if err != nil {
 		return reconcile.Report{}, err
 	}
@@ -113,7 +127,13 @@ func (s *Service) Reconcile(ctx context.Context, hash, account string) (reconcil
 	for _, e := range stored {
 		events = append(events, e.Event)
 	}
-	report := reconcile.Reconcile(snapshot.Snapshot, events, state.Connected && !state.GappedSinceSnapshot)
+	// Fills come from the durable deduplicated table keyed by (order, trade);
+	// the bounded page carries a complete total and a truncation flag.
+	fills, fillTotal, fillsTruncated, err := s.Store.ListFills(ctx, hash, account, snapshot.Snapshot.CapturedAtMs, reconcile.FillLimit)
+	if err != nil {
+		return reconcile.Report{}, err
+	}
+	report := reconcile.Reconcile(snapshot.Snapshot, events, fills, fillTotal, fillsTruncated, state.Connected && !state.GappedSinceSnapshot)
 	report.EventsTruncated = truncated
 	return report, nil
 }

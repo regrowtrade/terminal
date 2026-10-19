@@ -15,10 +15,18 @@ import (
 )
 
 type snapshotStore struct {
-	binding  vault.Binding
-	envelope vault.Envelope
-	err      error
-	saves    int
+	binding       vault.Binding
+	envelope      vault.Envelope
+	err           error
+	saves         int
+	snapshot      binance.Snapshot
+	listAfter     int64
+	fillAfter     int64
+	fillLimit     int
+	fills         []binance.Fill
+	fillTotal     int
+	fillError     error
+	fillTruncated bool
 }
 
 func (s *snapshotStore) ListReadAccounts(context.Context, string) ([]database.ReadAccount, error) {
@@ -32,16 +40,22 @@ func (s *snapshotStore) SaveReadSnapshot(context.Context, string, string, binanc
 	return s.err
 }
 func (s *snapshotStore) LatestReadSnapshot(context.Context, string, string) (database.StoredSnapshot, error) {
-	return database.StoredSnapshot{}, s.err
+	return database.StoredSnapshot{Snapshot: s.snapshot}, s.err
 }
 func (s *snapshotStore) LatestReadComparison(context.Context, string, string) (database.StoredComparison, error) {
 	return database.StoredComparison{}, s.err
 }
-func (s *snapshotStore) ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error) {
+func (s *snapshotStore) ListUserEvents(_ context.Context, _ string, _ string, after int64, _ int) ([]database.StoredEvent, bool, error) {
+	s.listAfter = after
 	return nil, false, s.err
 }
 func (s *snapshotStore) LatestStreamState(context.Context, string, string) (database.StreamState, error) {
 	return database.StreamState{}, s.err
+}
+func (s *snapshotStore) ListFills(_ context.Context, _ string, _ string, after int64, limit int) ([]binance.Fill, int, bool, error) {
+	s.fillAfter = after
+	s.fillLimit = limit
+	return s.fills, s.fillTotal, s.fillTruncated, s.fillError
 }
 
 type snapshotReader struct {
@@ -52,6 +66,35 @@ type snapshotReader struct {
 func (r *snapshotReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {
 	r.calls++
 	return binance.Snapshot{Source: "binance-production"}, r.err
+}
+
+func TestReconcileUsesSnapshotExchangeWatermarkAsBoundary(t *testing.T) {
+	store := &snapshotStore{snapshot: binance.Snapshot{CapturedAtMs: 1700000000000}}
+	service := &Service{Store: store}
+	if _, err := service.Reconcile(context.Background(), "synthetic", "00000000-0000-4000-8000-000000000001"); err != nil {
+		t.Fatal(err)
+	}
+	if store.listAfter != 1700000000000 || store.fillAfter != 1700000000000 || store.fillLimit != 200 {
+		t.Fatal("reconcile did not use the snapshot exchange watermark as the event boundary")
+	}
+}
+
+func TestReconcileUsesDurableFillsWithoutJournalEvents(t *testing.T) {
+	store := &snapshotStore{
+		snapshot:  binance.Snapshot{CapturedAtMs: 1700000000000},
+		fills:     []binance.Fill{{OrderID: "123", TradeID: "456", EventTime: 1700000000001}},
+		fillTotal: 201, fillTruncated: true,
+	}
+	service := &Service{Store: store}
+	report, err := service.Reconcile(context.Background(), "synthetic", "00000000-0000-4000-8000-000000000001")
+	if err != nil || report.TotalEvents != 0 || report.TotalFills != 201 || !report.FillsTruncated || len(report.Fills) != 1 || report.Fills[0].TradeID != "456" || report.ExecutionReady {
+		t.Fatal("reconciliation ignored the durable fill page", err)
+	}
+	store.fillError = database.ErrSessionInvalid
+	report, err = service.Reconcile(context.Background(), "synthetic", "00000000-0000-4000-8000-000000000001")
+	if !errors.Is(err, database.ErrSessionInvalid) || report.Fills != nil {
+		t.Fatal("fill read failure exposed a partial report")
+	}
 }
 
 func TestSnapshotRequiresSuccessfulPersistenceAndNeverFallsBack(t *testing.T) {

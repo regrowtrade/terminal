@@ -17,6 +17,10 @@ GRANT SELECT, INSERT, UPDATE ON public.exchange_read_snapshots TO terminal_runti
 GRANT SELECT, INSERT ON public.binance_user_events TO terminal_runtime;
 -- Continuity state written by the monitor, read for reconciliation. No deletion.
 GRANT SELECT, INSERT, UPDATE ON public.binance_stream_state TO terminal_runtime;
+-- Durable deduplicated fills; runtime inserts (append-only, ON CONFLICT) and reads.
+GRANT SELECT, INSERT ON public.binance_fills TO terminal_runtime;
+-- Archived legacy observations are administrative evidence, not runtime data.
+REVOKE ALL ON public.exchange_read_snapshot_archives FROM terminal_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.exchange_accounts, public.trade_campaigns, public.strategy_plans,
   public.order_intents, public.executions, public.campaign_ledger, public.journal_notes

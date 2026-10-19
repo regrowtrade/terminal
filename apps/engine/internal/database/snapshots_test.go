@@ -13,7 +13,7 @@ import (
 
 func syntheticReadSnapshot() binance.Snapshot {
 	now := time.Now().UTC().Truncate(time.Microsecond).Add(-2 * time.Second)
-	return binance.Snapshot{Source: "binance-production", Mode: "read_only", Consistency: "rest_non_atomic", StartedAt: now.Add(-time.Second), CapturedAt: now,
+	return binance.Snapshot{Source: "binance-production", Mode: "read_only", Consistency: "rest_non_atomic", StartedAt: now.Add(-time.Second), CapturedAt: now, CapturedAtMs: now.UnixMilli(),
 		Assets: []binance.Asset{{Asset: "USDT", WalletBalance: "100.00000001", UnrealizedProfit: "-2", AvailableBalance: "80"}}, Positions: []binance.Position{}, OpenOrders: []binance.Order{}, AlgoOrders: []binance.AlgoOrder{},
 		Instruments: []binance.Instrument{{Symbol: "BTCUSDT", ContractType: "PERPETUAL", Status: "TRADING", BaseAsset: "BTC", QuoteAsset: "USDT", MarginAsset: "USDT", Price: binance.RangeFilter{Min: "0.1", Max: "1000000", Step: "0.1"}, Lot: binance.RangeFilter{Min: "0.001", Max: "1000", Step: "0.001"}, MarketLot: binance.RangeFilter{Min: "0.001", Max: "100", Step: "0.001"}, MinNotional: "5", MultiplierUp: "1.05", MultiplierDown: "0.95", MaxOrders: 200, MaxAlgos: 10, UnknownFilters: []string{}}}}
 }

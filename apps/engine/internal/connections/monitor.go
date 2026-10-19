@@ -35,6 +35,9 @@ type Monitor struct {
 	Vault  *vault.Keyring
 	Stream Streamer
 	Log    *slog.Logger
+	// Gate buffers events while a snapshot read is in flight. Optional: a nil
+	// gate journals every event immediately.
+	Gate *SnapshotGate
 }
 
 func (m *Monitor) Run(ctx context.Context) error {
@@ -65,14 +68,25 @@ func (m *Monitor) Run(ctx context.Context) error {
 					logger.Error("monitor: no se pudo registrar estado de conexión", "account", accountID, "error", err)
 				}
 			})
-			sink := func(event binance.UserEvent) {
-				if _, err := m.Store.SaveUserEvents(ctx, accountID, []binance.UserEvent{event}); err != nil {
-					logger.Error("monitor: no se pudo guardar evento privado", "account", accountID, "type", event.Type, "error", err)
+			journal := func(events []binance.UserEvent) {
+				if _, err := m.Store.SaveUserEvents(ctx, accountID, events); err != nil {
+					logger.Error("monitor: no se pudo guardar evento privado", "account", accountID, "events", len(events), "error", err)
 					return
 				}
-				if err := m.Store.RecordStreamEvent(ctx, accountID, event.EventTime); err != nil {
-					logger.Error("monitor: no se pudo registrar tiempo de evento", "account", accountID, "error", err)
+				for _, event := range events {
+					if err := m.Store.RecordStreamEvent(ctx, accountID, event.EventTime); err != nil {
+						logger.Error("monitor: no se pudo registrar tiempo de evento", "account", accountID, "error", err)
+					}
 				}
+			}
+			if m.Gate != nil {
+				m.Gate.setJournal(accountID, journal)
+			}
+			sink := func(event binance.UserEvent) {
+				if m.Gate != nil && m.Gate.ingest(accountID, event) {
+					return
+				}
+				journal([]binance.UserEvent{event})
 			}
 			if err := stream.Run(ctx, credentials, sink); err != nil && ctx.Err() == nil {
 				logger.Error("monitor: flujo de eventos detenido", "account", accountID, "error", err)

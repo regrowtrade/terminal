@@ -108,6 +108,11 @@ func (s *Store) SaveUserEvents(ctx context.Context, account string, events []bin
 			}
 			saved += int(n)
 		}
+		// Extract TRADE executions into the durable fills table in the same
+		// transaction; the (order, trade) key deduplicates at-least-once delivery.
+		if err := saveFills(ctx, tx, account, owner, events); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

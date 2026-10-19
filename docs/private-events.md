@@ -41,6 +41,6 @@ El monitor del motor enumera las cuentas del propietario bajo la identidad perso
 
 ## Despliegue y pendientes
 
-Aplicar la migración `0006_user_events.sql` y los grants antes de habilitar el flujo; web y motor se actualizan juntos para el endpoint nuevo. Mientras haya mezcla de versiones, la lectura falla cerrada. No escalar sin cuota compartida, buffering durante snapshots y reconciliación reales.
+Aplicar las migraciones `0006_user_events.sql`, `0007_stream_state.sql` y `0008_fills.sql` y los grants antes de habilitar el flujo; web y motor se actualizan juntos. Mientras haya mezcla de versiones, la lectura falla cerrada. No escalar sin cuota compartida y reconciliación reales.
 
-Falta: buffering/coordinación con snapshots, deduplicación y ordenación de fills para construir un estado reconciliado, consulta de estados ambiguos, recuperación tras reinicio con pérdida/reordenación de eventos, y sustituir el dashboard ilustrativo por métricas conciliadas. Ejecución y automatizaciones siguen bloqueadas.
+Falta: consulta de estados ambiguos, recuperación tras reinicio con pérdida/reordenación de eventos, y sustituir el dashboard ilustrativo por métricas conciliadas. Ya implementado: buffering en memoria durante una lectura (`connections.SnapshotGate`), corte `capturedAtMs` por reloj del exchange para superponer solo eventos posteriores, y deduplicación durable de fills en `binance_fills` por `(orderId, tradeId)`. Ejecución y automatizaciones siguen bloqueadas.

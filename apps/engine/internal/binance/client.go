@@ -227,6 +227,7 @@ type Snapshot struct {
 	Source         string       `json:"source"`
 	Mode           string       `json:"mode"`
 	CapturedAt     time.Time    `json:"capturedAt"`
+	CapturedAtMs   int64        `json:"capturedAtMs"`
 	StartedAt      time.Time    `json:"startedAt"`
 	Consistency    string       `json:"consistency"`
 	ExecutionReady bool         `json:"executionReady"`
@@ -290,5 +291,6 @@ func (c *Client) Snapshot(ctx context.Context, credentials vault.Credentials) (S
 			return result, ErrResponse
 		}
 	}
-	return Snapshot{Source: "binance-production", Mode: "read_only", StartedAt: started, CapturedAt: time.Now().UTC(), Consistency: "rest_non_atomic", ExecutionReady: false, Assets: account.Assets, Positions: positions, OpenOrders: orders, AlgoOrders: algos, Instruments: instruments}, nil
+	capturedAt := time.Now().UTC()
+	return Snapshot{Source: "binance-production", Mode: "read_only", StartedAt: started, CapturedAt: capturedAt, CapturedAtMs: now(), Consistency: "rest_non_atomic", ExecutionReady: false, Assets: account.Assets, Positions: positions, OpenOrders: orders, AlgoOrders: algos, Instruments: instruments}, nil
 }
