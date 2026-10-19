@@ -31,3 +31,5 @@ Para futuras entregas dependientes, una vez integrado el PR anterior, cambiar la
 El propietario ya integró los PRs #9 (base de reconciliación, incluida la corrección de CI PostgreSQL `b1136fb`) y #10 (`feat/snapshot-event-buffering`) en `main`. Buffering, fills durables y transición administrativa de snapshots antiguos están allí desde `dd6e99d`; no habilitan trading.
 
 `feat/binance-order-observations` parte de ese `main` actualizado: consulta manual de órdenes normales por ID/cliente y evidencia durable. Mantiene separadas la observación y la recuperación automática todavía pendiente. Sin despliegue, migraciones remotas ni merge por el agente.
+
+El propietario integró el PR #11 en `main` (`ce60308`). `feat/persist-strategy-plans` parte de ahí: persistencia de planes como decisión durable (`trade_campaigns` DRAFT + `strategy_plans`), ligada a cuenta provisionada y con consumo acotado. El esquema ya existía en `0001`; no añade migración. Intenciones de órdenes deterministas y ejecución siguen pendientes en entregas posteriores.
