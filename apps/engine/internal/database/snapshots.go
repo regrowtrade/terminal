@@ -90,6 +90,11 @@ func (s *Store) SaveReadSnapshot(ctx context.Context, hash, account string, snap
 		if count != 1 {
 			return ErrSnapshotInvalid
 		}
+		// A fresh complete snapshot is the new authoritative baseline: any
+		// disconnection before it no longer leaves the account view gapped.
+		if _, err := tx.ExecContext(ctx, `UPDATE binance_stream_state SET gapped_since_snapshot=false, updated_at=clock_timestamp() WHERE account_id=$1 AND owner_id=$2`, account, owner); err != nil {
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO audit_events(id,owner_id,action,resource_id,correlation_id,metadata) VALUES(gen_random_uuid(),$1,'account.read_saved',$2,gen_random_uuid(),'{}')`, owner, account)
 		return err
 	})
