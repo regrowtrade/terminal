@@ -97,6 +97,9 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	testUserEventLifecycle(t, ctx, store, hash, id)
 	testStreamStateLifecycle(t, ctx, store, hash, id)
 	testFillLifecycle(t, ctx, store, runtimeURI, hash, id)
+	t.Run("legacy_snapshot_transition", func(t *testing.T) {
+		testLegacySnapshotTransition(t, ctx, store, admin, adminURI, runtimeURI, hash, id)
+	})
 	if _, err := ManageCredential(ctx, adminURI, "delete", id, "", nil, vault.Credentials{}); err != nil {
 		t.Fatal("could not remove encrypted credential")
 	}
