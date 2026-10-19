@@ -21,6 +21,7 @@ import {
 } from "@/lib/plans";
 import { riskSuggestion } from "@/lib/risk-suggestion";
 import { money } from "@/lib/demo";
+import { PlanSave } from "./plan-save";
 
 const modes = [
   {
@@ -537,6 +538,7 @@ export function Planner({
           aria-label="Resultado del cálculo"
         >
           <PlanResult plan={plan} />
+          <PlanSave request={request} />
         </div>
       )}
     </div>
