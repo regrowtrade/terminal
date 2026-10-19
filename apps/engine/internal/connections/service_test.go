@@ -32,6 +32,9 @@ func (s deniedStore) ListUserEvents(context.Context, string, string, int64, int)
 func (s deniedStore) LatestStreamState(context.Context, string, string) (database.StreamState, error) {
 	return database.StreamState{}, s.err
 }
+func (s deniedStore) ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error) {
+	return nil, 0, false, s.err
+}
 
 type neverReader struct{ t *testing.T }
 

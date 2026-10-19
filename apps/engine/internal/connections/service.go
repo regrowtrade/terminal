@@ -23,6 +23,7 @@ type Store interface {
 	LatestReadComparison(context.Context, string, string) (database.StoredComparison, error)
 	ListUserEvents(context.Context, string, string, int64, int) ([]database.StoredEvent, bool, error)
 	LatestStreamState(context.Context, string, string) (database.StreamState, error)
+	ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
@@ -126,7 +127,13 @@ func (s *Service) Reconcile(ctx context.Context, hash, account string) (reconcil
 	for _, e := range stored {
 		events = append(events, e.Event)
 	}
-	report := reconcile.Reconcile(snapshot.Snapshot, events, state.Connected && !state.GappedSinceSnapshot)
+	// Fills come from the durable deduplicated table keyed by (order, trade);
+	// the bounded page carries a complete total and a truncation flag.
+	fills, fillTotal, fillsTruncated, err := s.Store.ListFills(ctx, hash, account, snapshot.Snapshot.CapturedAtMs, reconcile.FillLimit)
+	if err != nil {
+		return reconcile.Report{}, err
+	}
+	report := reconcile.Reconcile(snapshot.Snapshot, events, fills, fillTotal, fillsTruncated, state.Connected && !state.GappedSinceSnapshot)
 	report.EventsTruncated = truncated
 	return report, nil
 }
