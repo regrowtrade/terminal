@@ -12,7 +12,7 @@ it("preserves int64 IDs, decimals and explicit empty order arrays", () => {
       .openOrders,
   ).toEqual([]);
 });
-it.each(["openOrders", "algoOrders", "instruments", "startedAt"])(
+it.each(["openOrders", "algoOrders", "instruments", "startedAt", "capturedAtMs"])(
   "rejects missing snapshot component %s",
   (field) => {
     const input: Record<string, unknown> = { ...syntheticSnapshot() };

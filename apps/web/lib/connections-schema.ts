@@ -107,6 +107,7 @@ export const snapshotSchema = z
     source: z.literal("binance-production"),
     mode: z.literal("read_only"),
     capturedAt: z.iso.datetime({ offset: true }),
+    capturedAtMs: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     startedAt: z.iso.datetime({ offset: true }),
     consistency: z.literal("rest_non_atomic"),
     executionReady: z.literal(false),

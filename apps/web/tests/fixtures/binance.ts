@@ -8,6 +8,7 @@ export function syntheticSnapshot(): AccountSnapshot {
     mode: "read_only",
     startedAt: capturedAt,
     capturedAt,
+    capturedAtMs: Date.parse(capturedAt),
     consistency: "rest_non_atomic",
     executionReady: false,
     assets: [
