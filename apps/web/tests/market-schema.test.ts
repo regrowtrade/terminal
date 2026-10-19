@@ -12,14 +12,17 @@ it("preserves int64 IDs, decimals and explicit empty order arrays", () => {
       .openOrders,
   ).toEqual([]);
 });
-it.each(["openOrders", "algoOrders", "instruments", "startedAt", "capturedAtMs"])(
-  "rejects missing snapshot component %s",
-  (field) => {
-    const input: Record<string, unknown> = { ...syntheticSnapshot() };
-    delete input[field];
-    expect(snapshotSchema.safeParse(input).success).toBe(false);
-  },
-);
+it.each([
+  "openOrders",
+  "algoOrders",
+  "instruments",
+  "startedAt",
+  "capturedAtMs",
+])("rejects missing snapshot component %s", (field) => {
+  const input: Record<string, unknown> = { ...syntheticSnapshot() };
+  delete input[field];
+  expect(snapshotSchema.safeParse(input).success).toBe(false);
+});
 it.each([9007199254740992, "9223372036854775808", "NaN", "1.5", "-1"])(
   "rejects unsafe order ID %s without throwing",
   (orderId) => {

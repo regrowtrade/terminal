@@ -265,7 +265,7 @@ paths:
   /v1/connections/binance/reconcile:
     post:
       operationId: reconcileBinanceStream
-      description: Layers the deduplicated read-only event stream over the latest saved snapshot and reports stream continuity for the authenticated owner. Requires a valid session and ownership; no credentials or exchange request. When the stream has disconnected since the snapshot, continuity is gapped and the event-derived fills are explicitly incomplete. Never inferred from absence, never execution readiness. Available with the live reader disabled.
+      description: Layers the bounded read-only event journal and durable deduplicated fills over the latest saved snapshot, strictly after its approximate exchange-clock cutoff. Fill totals cover all stored post-cutoff fills independently of the 200-event journal page. Requires a valid session and ownership; no credentials or exchange request. When the stream has disconnected since the snapshot, continuity is gapped and fills may be missing. REST is non-atomic; the cutoff does not prove every earlier event is reflected in every field. Never inferred from absence, never execution readiness. Available with the live reader disabled.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -861,7 +861,7 @@ components:
           fillsTruncated,
           fills,
         ]
-      description: Deduplicated stream summary layered on the authoritative snapshot. continuity is gapped when the stream has disconnected since the snapshot, so fills may be incomplete. Never a reconciled ledger or execution readiness.
+      description: Bounded journal summary and durable fills layered on the authoritative snapshot after its approximate exchange-clock cutoff. totalFills counts all stored post-cutoff fills even when event or fill details are truncated. continuity is gapped when the stream has disconnected since the snapshot, so fills may be incomplete. Never a reconciled ledger or execution readiness.
       properties:
         continuity: { enum: [established, gapped] }
         executionReady: { const: false }
