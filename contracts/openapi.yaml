@@ -481,6 +481,7 @@ components:
           mode,
           startedAt,
           capturedAt,
+          capturedAtMs,
           consistency,
           executionReady,
           assets,
@@ -494,6 +495,7 @@ components:
         mode: { const: read_only }
         startedAt: { type: string, format: date-time }
         capturedAt: { type: string, format: date-time }
+        capturedAtMs: { type: integer, minimum: 1, maximum: 9007199254740991 }
         consistency: { const: rest_non_atomic }
         executionReady: { const: false }
         assets:

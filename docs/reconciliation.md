@@ -19,6 +19,7 @@ El monitor marca `gapped_since_snapshot=true` en cada desconexión y `connected`
 `POST /v1/connections/binance/reconcile` (web autenticada) superpone el journal de eventos sobre la última lectura guardada y devuelve:
 
 - `continuity`, `executionReady=false` y `snapshotCapturedAt` del baseline.
+- Corte por reloj del exchange: la lectura guarda `capturedAtMs` (tiempo del exchange en el instante de `capturedAt`) y el reporte superpone solo los eventos con `event_time` estrictamente posterior; los anteriores ya están reflejados en la lectura y no se cuentan dos veces.
 - Conteos de eventos (`totalEvents`, `orderUpdates`, `accountUpdates`), `lastEventTime` y si el journal consultado quedó truncado (`eventsTruncated`).
 - `fills`: ejecuciones `TRADE` deduplicadas por `(orderId, tradeId)`, acotadas a 200 con `totalFills` completo y `fillsTruncated`. Precios/cantidades/comisiones son strings decimales originales.
 
@@ -37,7 +38,7 @@ Aplicar la migración `0007_stream_state.sql` y los grants antes de actualizar t
 ## Qué falta
 
 - [x] Buffering en memoria de eventos durante una lectura: `connections.SnapshotGate` retiene los eventos que llegan mientras una snapshot REST está en vuelo y los vuelca al journal al confirmar la lectura, de modo que ninguno se pierde al cruzar `capturedAt`. Es una primitiva de proceso; la durabilidad sigue estando en el journal.
-- [ ] Ordenación/antigüedad por evento frente al reloj del exchange (watermark de corte para que la reconciliación superponga solo eventos posteriores a la lectura).
+- [x] Watermark de corte por reloj del exchange: la snapshot guarda `capturedAtMs` (tiempo del exchange en `capturedAt`) y la reconciliación consulta solo eventos con `event_time` estrictamente posterior, de modo que lo ya reflejado no se superpone dos veces. El corte es una extrapolación lineal del reloj del exchange y no sustituye a una antigüedad exacta por evento.
 - [ ] Consulta de estados ambiguos.
 - [ ] Deduplicación durable de fills con tradeId como clave primaria.
 - [ ] Monitor de cuenta sincronizado (UI).
