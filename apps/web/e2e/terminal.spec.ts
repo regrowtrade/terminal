@@ -31,6 +31,7 @@ test("requires login and protects the preview API", async ({
     "latest",
     "comparison",
     "events",
+    "reconcile",
   ]) {
     const reading = await request.post(
       `/api/connections/binance/${operation}`,
