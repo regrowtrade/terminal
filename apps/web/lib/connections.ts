@@ -9,6 +9,7 @@ import {
   storedSnapshotSchema,
 } from "./connections-schema";
 import { eventsResponseSchema } from "./events-schema";
+import { reconciliationReportSchema } from "./reconciliation-schema";
 import { boundedText } from "./request";
 import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
@@ -21,6 +22,7 @@ const responseSchemas = {
   latest: storedSnapshotSchema,
   comparison: storedComparisonSchema,
   events: eventsResponseSchema,
+  reconcile: reconciliationReportSchema,
 };
 function json(body: unknown, status: number) {
   return Response.json(body, {
@@ -30,7 +32,8 @@ function json(body: unknown, status: number) {
 }
 export async function connectionRequest(
   request: Request,
-  operation: "list" | "snapshot" | "latest" | "comparison" | "events",
+  operation:
+    "list" | "snapshot" | "latest" | "comparison" | "events" | "reconcile",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -103,7 +106,9 @@ export async function connectionRequest(
             ? "Cuenta o lectura guardada no disponible."
             : operation === "comparison"
               ? "Cuenta o comparación guardada no disponible."
-              : "Cuenta no disponible.",
+              : operation === "reconcile"
+                ? "Cuenta o lectura para reconciliar no disponible."
+                : "Cuenta no disponible.",
         422: "La clave no cumple los permisos de lectura e IP requeridos. Revisa los permisos en Binance; no actives trading.",
         429: "Binance limitó temporalmente las consultas. Espera antes de actualizar.",
         503: "Lectura no disponible. Revisa PostgreSQL, cifrado y habilitación del motor; no se enviaron órdenes.",
