@@ -35,3 +35,5 @@ El propietario ya integró los PRs #9 (base de reconciliación, incluida la corr
 El propietario integró el PR #11 en `main` (`ce60308`). `feat/persist-strategy-plans` parte de ahí: persistencia de planes como decisión durable (`trade_campaigns` DRAFT + `strategy_plans`), ligada a cuenta provisionada y con consumo acotado. El esquema ya existía en `0001`; no añade migración. Intenciones de órdenes deterministas y ejecución siguen pendientes en entregas posteriores.
 
 El propietario integró el PR #12 (`7e1d840`). `feat/order-intents` parte de ese `main`: descompone un plan `clean`/`dca` en intenciones deterministas (`order_intents`) con `clientOrderId` estable e idempotente; la cobertura falla cerrada. No envía órdenes. El ejecutor, la reconciliación/recuperación de ejecución y las automatizaciones siguen pendientes.
+
+El propietario integró el PR #13 (`c794bdc`). `feat/plans-api` parte de ese `main`: expone por HTTP el guardado y listado de planes e intenciones con proxy web y OpenAPI; aún sin UI de consumo. Sin órdenes ni despliegue.

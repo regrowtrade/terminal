@@ -86,7 +86,7 @@ func main() {
 			service.Gate = gate
 			monitor = &connections.Monitor{Store: store, Vault: keys, Stream: binance.NewStream(client), Log: slog.Default(), Gate: gate}
 		}
-		server.Handler = httpapi.HandlerWithConnections(token, store.Ready, store, service)
+		server.Handler = httpapi.HandlerWithPlans(token, store.Ready, store, service, store)
 	} else if enabled == "true" {
 		slog.Error("La lectura Binance requiere PostgreSQL")
 		os.Exit(1)

@@ -206,6 +206,128 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+  /v1/plans/save:
+    post:
+      operationId: saveStrategyPlan
+      description: Persist a recomputed plan as a DRAFT campaign and its first strategy plan, tied to an owned provisioned Binance account. Never trusts a client result; never submits orders. Intents are derived separately via /v1/plans/intents/save.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/PlanRequest" }
+                - type: object
+                  required: [tokenHash, accountId]
+                  properties:
+                    tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                    accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The persisted decision, never an execution acknowledgement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedPlan" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/plans/list:
+    post:
+      operationId: listStrategyPlans
+      description: Bounded recent persisted plans for an owned account. Read-only; no exchange contact.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Most recent persisted decisions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StoredPlan" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/plans/intents/save:
+    post:
+      operationId: savePlanIntents
+      description: Decompose an owned plan into deterministic order intents and persist them idempotently. Clean/dca only; hedge fails closed. Never submits orders.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId, planId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                planId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Number of newly persisted intents (zero on an idempotent repeat).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [count]
+                properties:
+                  count: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/plans/intents/list:
+    post:
+      operationId: listPlanIntents
+      description: Deterministic order intents of an owned plan. Read-only; no exchange contact.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId, planId]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                planId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The planned (never sent) orders of the plan.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OrderIntent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/connections/binance/comparison:
     post:
       operationId: latestBinanceObservationComparison
@@ -1207,3 +1329,86 @@ components:
           items: { $ref: "#/components/schemas/Level" }
         warnings: { type: array, items: { type: string } }
         stopReason: { type: string }
+    SavedPlan:
+      type: object
+      additionalProperties: false
+      required: [campaignId, planId, version]
+      properties:
+        campaignId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+    StoredPlan:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          campaignId,
+          planId,
+          version,
+          mode,
+          symbol,
+          riskAmount,
+          parameters,
+          plan,
+          createdAt,
+        ]
+      properties:
+        campaignId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        mode: { type: string, enum: [clean, dca, hedge] }
+        symbol: { type: string }
+        riskAmount: { $ref: "#/components/schemas/CalculatedDecimal" }
+        parameters: { $ref: "#/components/schemas/PlanRequest" }
+        plan: { $ref: "#/components/schemas/Plan" }
+        createdAt: { type: string, format: date-time }
+    OrderIntent:
+      type: object
+      additionalProperties: false
+      description: A planned order, never sent. exchangeOrderId and status remain null/PENDING until an executor (not yet implemented) acts on it.
+      required:
+        [
+          id,
+          planId,
+          clientOrderId,
+          exchangeOrderId,
+          family,
+          purpose,
+          positionSide,
+          status,
+          quantity,
+          price,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        clientOrderId: { type: string, minLength: 1, maxLength: 36 }
+        exchangeOrderId: { anyOf: [{ type: string }, { type: "null" }] }
+        family: { type: string, enum: [regular, conditional] }
+        purpose:
+          {
+            type: string,
+            enum: [ENTRY, REBUY, TP, SL, HEDGE_CLOSE, EMERGENCY_CLOSE],
+          }
+        positionSide: { type: string, enum: [LONG, SHORT] }
+        status:
+          {
+            type: string,
+            enum:
+              [
+                PENDING,
+                SENDING,
+                UNKNOWN,
+                ACKNOWLEDGED,
+                PARTIAL,
+                FILLED,
+                CANCELLED,
+                REJECTED,
+                EXPIRED,
+              ],
+          }
+        quantity: { $ref: "#/components/schemas/CalculatedDecimal" }
+        price:
+          anyOf:
+            - { $ref: "#/components/schemas/CalculatedDecimal" }
+            - { type: "null" }
