@@ -20,6 +20,7 @@ import { PlanButton } from "@/components/workspace";
 import { requireOwner } from "@/lib/auth";
 import { sessionBackend } from "@/lib/sessions";
 import { BinanceConnection } from "@/components/binance-connection";
+import { SavedPlans } from "@/components/saved-plans";
 
 export default async function Section({
   params,
@@ -199,6 +200,13 @@ export default async function Section({
               No introduzcas API keys en el navegador. Bybit aún no está
               implementado.
             </p>
+          </section>
+          <section className="card settings-card">
+            <div className="card-heading">
+              <h2>Planes guardados</h2>
+              <Layers3 size={18} />
+            </div>
+            <SavedPlans />
           </section>
           <section className="card settings-card full-span">
             <div className="card-heading">

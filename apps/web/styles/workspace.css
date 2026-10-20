@@ -955,6 +955,41 @@ td small {
   margin-left: 0;
   overflow-wrap: anywhere;
 }
+.plan-save {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  min-width: 0;
+}
+.plan-save label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.plan-save select {
+  width: 100%;
+  margin: 12px 0;
+}
+.saved-plan {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  min-width: 0;
+}
+.intent-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.intent-list li {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+.intent-list code {
+  font-size: 10px;
+}
 .settings-card .card-heading {
   padding: 22px 0;
   color: #9bad91;

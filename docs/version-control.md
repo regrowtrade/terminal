@@ -37,3 +37,5 @@ El propietario integró el PR #11 en `main` (`ce60308`). `feat/persist-strategy-
 El propietario integró el PR #12 (`7e1d840`). `feat/order-intents` parte de ese `main`: descompone un plan `clean`/`dca` en intenciones deterministas (`order_intents`) con `clientOrderId` estable e idempotente; la cobertura falla cerrada. No envía órdenes. El ejecutor, la reconciliación/recuperación de ejecución y las automatizaciones siguen pendientes.
 
 El propietario integró el PR #13 (`c794bdc`). `feat/plans-api` parte de ese `main`: expone por HTTP el guardado y listado de planes e intenciones con proxy web y OpenAPI; aún sin UI de consumo. Sin órdenes ni despliegue.
+
+El propietario integró el PR #14 (`fbf35f6`). `feat/plans-ui` parte de ese `main`: botón de guardado en el planificador y panel «Planes guardados» en ajustes; sin ejecución.
