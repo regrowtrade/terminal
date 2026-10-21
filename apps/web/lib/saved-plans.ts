@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authenticated, cookieName } from "./auth";
 import { engineURL } from "./engine";
 import { planRequestSchema } from "./plans";
+import { intentObservationSchema } from "./intent-observation-schema";
 import { boundedText } from "./request";
 import {
   savedPlanSchema,
@@ -19,18 +20,34 @@ const intentsCountSchema = z.strictObject({
   count: z.number().int().nonnegative(),
 });
 
-type Operation = "save" | "list" | "intents/save" | "intents/list";
+type Operation =
+  | "save"
+  | "list"
+  | "intents/save"
+  | "intents/list"
+  | "intents/observe"
+  | "intents/observations";
 const requestSchemas = {
   save: z.strictObject({ accountId: z.uuid(), plan: planRequestSchema }),
   list: z.strictObject({ accountId: z.uuid() }),
   "intents/save": z.strictObject({ accountId: z.uuid(), planId: z.uuid() }),
   "intents/list": z.strictObject({ accountId: z.uuid(), planId: z.uuid() }),
+  "intents/observe": z.strictObject({
+    accountId: z.uuid(),
+    intentId: z.uuid(),
+  }),
+  "intents/observations": z.strictObject({
+    accountId: z.uuid(),
+    intentId: z.uuid(),
+  }),
 };
 const responseSchemas = {
   save: savedPlanSchema,
   list: z.array(storedPlanSchema),
   "intents/save": intentsCountSchema,
   "intents/list": z.array(storedIntentSchema),
+  "intents/observe": intentObservationSchema,
+  "intents/observations": z.array(intentObservationSchema).max(20),
 };
 
 function json(body: unknown, status: number) {
@@ -96,8 +113,9 @@ export async function plansRequest(request: Request, operation: Operation) {
     if (!response.ok) {
       const errors: Record<number, string> = {
         401: "Sesión no válida. Vuelve a iniciar sesión.",
-        404: "Cuenta o plan no disponible.",
-        422: "El plan no es válido; no se guardó.",
+        404: "Cuenta, plan o intención no disponible.",
+        409: "La intención o su plan cambió durante la consulta.",
+        422: "Plan o intención no compatible, o permisos de lectura no válidos.",
         429: "Demasiadas consultas. Espera antes de reintentar.",
         503: "No se pudo guardar o leer el plan. No se enviaron órdenes.",
       };
@@ -108,7 +126,24 @@ export async function plansRequest(request: Request, operation: Operation) {
     }
     const bodyText = await boundedText(response, 4 * 1024 * 1024);
     const data: unknown = JSON.parse(bodyText);
-    return json(responseSchemas[operation].parse(data), 200);
+    const validated = responseSchemas[operation].parse(data);
+    if (
+      operation === "intents/observe" ||
+      operation === "intents/observations"
+    ) {
+      const intentId = requestSchemas["intents/observe"]
+        .parse(parsed.data)
+        .intentId.toLowerCase();
+      const observations = Array.isArray(validated) ? validated : [validated];
+      if (
+        observations.some(
+          (item) =>
+            !("report" in item) || item.report.expected.intentId !== intentId,
+        )
+      )
+        throw new Error("Unexpected intent evidence");
+    }
+    return json(validated, 200);
   } catch {
     return json(
       { error: "No se pudo guardar o leer el plan. No se enviaron órdenes." },

@@ -39,3 +39,5 @@ El propietario integró el PR #12 (`7e1d840`). `feat/order-intents` parte de ese
 El propietario integró el PR #13 (`c794bdc`). `feat/plans-api` parte de ese `main`: expone por HTTP el guardado y listado de planes e intenciones con proxy web y OpenAPI; aún sin UI de consumo. Sin órdenes ni despliegue.
 
 El propietario integró el PR #14 (`fbf35f6`). `feat/plans-ui` parte de ese `main`: botón de guardado en el planificador y panel «Planes guardados» en ajustes; sin ejecución.
+
+El propietario integró el PR #15 (`e6e77b0`). `feat/intent-order-observations` parte de ese `main`: investigación de intenciones normales con criterios persistidos, comparación de atributos, evidencia durable, auditoría e historia acotada. No confirma propiedad, modifica intenciones ni envía órdenes. Migración `0011` y grants explícitos; sin despliegue ni merge por el agente.

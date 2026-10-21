@@ -447,8 +447,62 @@ paths:
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/plans/intents/observe:
+    post:
+      operationId: observeBinanceNormalIntent
+      description: Read-only investigation of a saved regular ENTRY/REBUY. Criteria come exclusively from the owned plan and deterministic decomposition. Revalidates session, credentials, snapshot fingerprint and intent after external I/O; assessment and audit commit atomically. Attribute agreement never confirms submission or ownership. No intent transitions, fills, retries or execution. Production read-only adapter only; testnet/conditional/hedge unsupported. Web proxy derives tokenHash and accepts only accountId/intentId. No UI in this delivery.
+      security: [{ engineToken: [] }]
+      requestBody:
+        { $ref: "#/components/requestBodies/IntentObservationCriteria" }
+      responses:
+        "200":
+          description: Persisted point-in-time comparison. Absence remains unresolved; BOTH is a positionSide mismatch, not assumed equivalent to LONG/SHORT.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoredIntentObservation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/plans/intents/observations:
+    post:
+      operationId: listBinanceIntentObservations
+      description: Explicit historical recovery for an owned intent, newest 20 only (not full history). Requires a persisted session but no keys/exchange; available with reading disabled or after credential deletion. Revalidates assessments; no partial data on corruption, fallback from failed current investigation or state transitions. Empty history does not prove absence of orders. All responses no-store.
+      security: [{ engineToken: [] }]
+      requestBody:
+        { $ref: "#/components/requestBodies/IntentObservationCriteria" }
+      responses:
+        "200":
+          description: Historical evidence, never implicitly current or reconciled.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items: { $ref: "#/components/schemas/StoredIntentObservation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   requestBodies:
+    IntentObservationCriteria:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [tokenHash, accountId, intentId]
+            properties:
+              tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+              accountId: { type: string, format: uuid }
+              intentId: { type: string, format: uuid }
     SessionDigest:
       required: true
       content:
@@ -498,6 +552,73 @@ components:
             properties:
               error: { type: string }
   schemas:
+    ExpectedNormalIntent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          intentId,
+          planId,
+          planFingerprint,
+          symbol,
+          clientOrderId,
+          purpose,
+          positionSide,
+          quantity,
+          price,
+        ]
+      properties:
+        intentId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        planFingerprint:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: SHA-256 of stored snapshot representation. Not authorization or an exchange identifier.
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        clientOrderId: { type: string, pattern: "^rt[a-f0-9]{30}$" }
+        purpose: { enum: [ENTRY, REBUY] }
+        positionSide: { enum: [LONG, SHORT] }
+        quantity:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'
+          description: Strictly positive decimal, exact comparison.
+        price:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$'
+          description: Strictly positive LIMIT price.
+    IntentObservationReport:
+      type: object
+      additionalProperties: false
+      description: Query must equal expected symbol/clientOrderId. Observed orders compare LIMIT, BUY for LONG / SELL for SHORT, positionSide, exact decimal quantity/price and reduceOnly=false. Mismatches are unique and in that order. attributes_match requires none; mismatch requires at least one; unresolved requires unresolved observation and no mismatches. Never infers position closure or ownership.
+      required:
+        [
+          expected,
+          observation,
+          assessment,
+          mismatches,
+          executionReady,
+          ownershipConfirmed,
+        ]
+      properties:
+        expected: { $ref: "#/components/schemas/ExpectedNormalIntent" }
+        observation: { $ref: "#/components/schemas/BinanceOrderLookup" }
+        assessment: { enum: [attributes_match, mismatch, unresolved] }
+        mismatches:
+          type: array
+          maxItems: 6
+          uniqueItems: true
+          items:
+            { enum: [type, side, positionSide, quantity, price, reduceOnly] }
+        executionReady: { const: false }
+        ownershipConfirmed: { const: false }
+    StoredIntentObservation:
+      type: object
+      additionalProperties: false
+      required: [id, storedAt, report]
+      properties:
+        id: { type: string, format: uuid }
+        storedAt: { type: string, format: date-time }
+        report: { $ref: "#/components/schemas/IntentObservationReport" }
     NormalClientOrderId:
       type: string
       pattern: "^[.A-Z:/a-z0-9_-]{1,36}$"

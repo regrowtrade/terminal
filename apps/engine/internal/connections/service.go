@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regrow/engine/internal/binance"
 	"regrow/engine/internal/database"
+	"regrow/engine/internal/intentcheck"
 	"regrow/engine/internal/reconcile"
 	"regrow/engine/internal/vault"
 )
@@ -25,6 +26,9 @@ type Store interface {
 	LatestStreamState(context.Context, string, string) (database.StreamState, error)
 	ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error)
 	SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error
+	ReadIntentExpected(context.Context, string, string, string) (intentcheck.Expected, error)
+	SaveIntentObservation(context.Context, string, string, intentcheck.Expected, binance.OrderLookup) (database.StoredIntentObservation, error)
+	ListIntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)

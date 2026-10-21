@@ -15,6 +15,7 @@ import (
 )
 
 type snapshotStore struct {
+	deniedStore
 	binding       vault.Binding
 	envelope      vault.Envelope
 	err           error

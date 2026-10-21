@@ -17,6 +17,15 @@ type fakeConnections struct {
 	calls int
 }
 
+func (f *fakeConnections) ObserveIntent(context.Context, string, string, string) (database.StoredIntentObservation, error) {
+	f.calls++
+	return database.StoredIntentObservation{}, f.err
+}
+func (f *fakeConnections) IntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error) {
+	f.calls++
+	return []database.StoredIntentObservation{}, f.err
+}
+
 func (f *fakeConnections) LookupOrder(context.Context, string, string, binance.OrderQuery) (binance.OrderLookup, error) {
 	f.calls++
 	return binance.OrderLookup{}, f.err

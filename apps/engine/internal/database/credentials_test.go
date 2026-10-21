@@ -120,6 +120,21 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	if err := store.SaveOrderObservation(ctx, hash, id, syntheticOrderLookup()); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can save order observations")
 	}
+	var observedIntent string
+	if err := admin.QueryRowContext(ctx, `SELECT intent_id::text FROM binance_intent_observations WHERE account_id=$1 LIMIT 1`, id).Scan(&observedIntent); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := store.ReadIntentExpected(ctx, hash, id, observedIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentHistory, err := store.ListIntentObservations(ctx, hash, id, observedIntent)
+	if err != nil || len(intentHistory) != 20 {
+		t.Fatal("credential deletion removed intent history", err)
+	}
+	if _, err := store.SaveIntentObservation(ctx, hash, id, expected, intentHistory[0].Report.Observation); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("removed credential can save intent observations", err)
+	}
 	var observations int
 	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM binance_order_observations WHERE account_id=$1`, id).Scan(&observations); err != nil || observations != 2 {
 		t.Fatal("credential deletion removed order evidence")

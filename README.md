@@ -13,7 +13,7 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 - Presupuesto en USDT o porcentaje de una base manual explícita (saldo/equity).
 - Nuevo resultado neto de referencia en cada cálculo: realizado + flotante de ambos lados − comisiones + funding.
 - Cálculo de exposición tras cierres parciales probado unitariamente; el HTTP preview muestra escenarios por nivel completo.
-- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. Identidad personal, sesiones revocables, auditoría, cuentas provisionadas y última lectura manual del exchange persistidas; planes todavía pendientes.
+- Base de conexión PostgreSQL, migrador administrativo con historial/checksums y readiness de rol/esquema. Identidad personal, sesiones revocables, auditoría, cuentas provisionadas y última lectura manual persistidas; planes e intenciones de simulación también persistidos mediante API.
 - Imágenes web/motor para Railway y definición IaC versionada; no desplegadas desde esta entrega.
 - Credenciales cifradas por envolvente y CLI administrativo con entrada oculta; panel manual de saldos/posiciones, órdenes abiertas normales/condicionales y catálogo/filtros de perpetuos Binance USDT en Configuración, solo lectura y desactivado por defecto. IDs int64 como texto, precios/cantidades decimales e intervalo de observación explícito. [Habilitación, permisos y límites](docs/binance-readonly.md).
 - Guardado de la última lectura completa por cuenta con RLS y revalidación de sesión tras la consulta; recuperación manual desde PostgreSQL marcada como **guardada, no actual**, incluso con el lector externo desactivado. No es un historial de fills ni un checkpoint de reconciliación.
@@ -21,6 +21,9 @@ Terminal privada con Next.js y un motor de cálculo Go. La transición a uso rea
 - Comparación durable entre la última lectura completa y la anterior, guardada en la misma transacción: diferencias decimales de saldos, posiciones, órdenes y filtros; ausencia como «no observado», nunca fill/cancelación/cierre inferido. Detalle limitado explícitamente a 200 registros con conteo completo. No establece continuidad ni habilita ejecución.
 - Flujo de usuario de Binance **solo lectura** (listenKey/WebSocket) con eventos `ORDER_TRADE_UPDATE`/`ACCOUNT_UPDATE` normalizados, deduplicación durable, reconexión con backoff y keepalive, y journal append-only `binance_user_events` recuperable por la web autenticada. No reconcilia fills ni establece continuidad; Binance no reenvía eventos perdidos. [Alcance y límites](docs/private-events.md).
 - Continuidad durable del flujo y reporte de reconciliación (solo lectura): estado `connected`/`gapped_since_snapshot` por cuenta, reiniciado por cada lectura REST, corte por reloj del exchange (`capturedAtMs`) y `POST /v1/connections/binance/reconcile` con fills `TRADE` deduplicados durablemente por `(orderId, tradeId)` y acotados. No es un estado reconciliado ni habilita ejecución. [Alcance y límites](docs/reconciliation.md).
+
+- Planes de simulación persistidos desde el planificador y listado de planes/intenciones en Configuración (PRs #12–#15). Intenciones deterministas para entrada/recompras y TP/SL finales, nunca enviadas; cobertura sin intenciones todavía.
+- Investigación por API de una intención normal ENTRY/REBUY con criterios del plan persistido, comparación decimal y evidencia append-only bajo RLS; historia explícita de las últimas 20 observaciones. Una coincidencia no prueba propiedad/envío; ausencia sigue no resuelta. Sin UI nueva ni ejecución. [Alcance](docs/intent-observations.md).
 
 ## Qué NO funciona todavía
 
@@ -103,7 +106,7 @@ Si la descarga de Chromium no está disponible, puedes usar un Chrome instalado:
 
 Consulta [docs/strategy-rules.md](docs/strategy-rules.md). El motor utiliza decimales, transmite cantidades como strings y redondea divisiones a 32 decimales. La UI usa números binarios solo para **formatear visualmente** resultados; la sugerencia de riesgo usa enteros escalados y el motor vuelve a calcular el presupuesto de forma independiente.
 
-Cambiar un campo invalida la vista previa previa. No se persisten planes ni se autoriza trading al calcular.
+Cambiar un campo invalida la vista previa previa. Calcular no guarda ni autoriza trading; guardar un plan es una acción explícita separada y solo de simulación.
 
 ## Arquitectura y próximos pasos
 
