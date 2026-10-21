@@ -141,4 +141,7 @@ func testPlanLifecycle(t *testing.T, ctx context.Context, store *Store, admin *s
 	if _, err := store.ListPlanIntents(ctx, testDigest(), account, saved.PlanID); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatal("unregistered session listed intents")
 	}
+	t.Run("intent_observations", func(t *testing.T) {
+		testIntentObservationLifecycle(t, ctx, store, admin, hash, account, byPurpose["ENTRY"], byPurpose["TP"])
+	})
 }

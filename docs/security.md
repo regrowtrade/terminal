@@ -22,6 +22,8 @@
 
 ## Límites actuales
 
+La investigación de intenciones normales usa criterios derivados del plan persistido, no selectores del navegador; revalida sesión/cuenta/decisión después de la consulta y guarda evaluación + auditoría atómicamente en `binance_intent_observations`. RLS forzada y grants append-only. Siempre `executionReady=false` y `ownershipConfirmed=false`: una coincidencia no autoriza estados, reintentos ni envío. Recuperación histórica explícita (últimas 20) sin claves y con evaluación revalidada. [Alcance](intent-observations.md).
+
 Es acceso personal, no un sistema de identidad comercial. La contraseña sigue en el gestor de secretos del servidor; no hay registro, hash de contraseña administrado desde UI, MFA ni recovery. El rate limit de login/preview aún está en memoria y se reinicia al desplegar: no escalar ni abrir registros hasta incorporar limitación compartida. La verificación de contraseña vive en la web; el token privado del motor es una credencial de confianza capaz de registrar sesiones, debe permanecer protegido.
 
 `SESSION_BACKEND=local` solo está permitido fuera de producción: sesiones revocables en memoria, perdidas al reiniciar, sin auditoría durable. Producción usa `postgres` por defecto y rechaza explícitamente `local` o modos desconocidos. Una caída de base/motor bloquea acceso; nunca degrada a cookies stateless. Si logout no puede confirmar revocación devuelve 503 y conserva la cookie para reintentar, sin afirmar éxito. Solicitudes ya autorizadas pueden terminar tras una revocación; futuras operaciones financieras deberán verificar autorización junto a su transacción durable.

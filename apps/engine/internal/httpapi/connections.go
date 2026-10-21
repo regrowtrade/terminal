@@ -22,6 +22,8 @@ type ConnectionService interface {
 	Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error)
 	Reconcile(context.Context, string, string) (reconcile.Report, error)
 	LookupOrder(context.Context, string, string, binance.OrderQuery) (binance.OrderLookup, error)
+	ObserveIntent(context.Context, string, string, string) (database.StoredIntentObservation, error)
+	IntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error)
 }
 
 func registerConnections(mux *http.ServeMux, token string, service ConnectionService) {

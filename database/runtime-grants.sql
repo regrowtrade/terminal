@@ -21,6 +21,8 @@ GRANT SELECT, INSERT, UPDATE ON public.binance_stream_state TO terminal_runtime;
 GRANT SELECT, INSERT ON public.binance_fills TO terminal_runtime;
 -- Durable normal-order query evidence; never edit/delete or infer executions.
 GRANT SELECT, INSERT ON public.binance_order_observations TO terminal_runtime;
+-- Intent-linked comparison evidence is append-only, never execution authority.
+GRANT SELECT, INSERT ON public.binance_intent_observations TO terminal_runtime;
 -- Archived legacy observations are administrative evidence, not runtime data.
 REVOKE ALL ON public.exchange_read_snapshot_archives FROM terminal_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON

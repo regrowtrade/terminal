@@ -5,11 +5,22 @@ import (
 	"errors"
 	"regrow/engine/internal/binance"
 	"regrow/engine/internal/database"
+	"regrow/engine/internal/intentcheck"
 	"regrow/engine/internal/vault"
 	"testing"
 )
 
 type deniedStore struct{ err error }
+
+func (s deniedStore) ReadIntentExpected(context.Context, string, string, string) (intentcheck.Expected, error) {
+	return intentcheck.Expected{}, s.err
+}
+func (s deniedStore) SaveIntentObservation(context.Context, string, string, intentcheck.Expected, binance.OrderLookup) (database.StoredIntentObservation, error) {
+	return database.StoredIntentObservation{}, s.err
+}
+func (s deniedStore) ListIntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error) {
+	return nil, s.err
+}
 
 func (s deniedStore) ListReadAccounts(context.Context, string) ([]database.ReadAccount, error) {
 	return nil, s.err
