@@ -52,13 +52,24 @@ type neverReader struct{ t *testing.T }
 func (s deniedStore) SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error {
 	return s.err
 }
+func (s deniedStore) SaveRecoveredFills(context.Context, string, string, []binance.Fill) (database.RecoveredFillsResult, error) {
+	return database.RecoveredFillsResult{}, s.err
+}
 func (r neverReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
 	r.t.Fatal("unauthorized order query reached exchange")
 	return binance.OrderLookup{}, nil
 }
+func (r neverReader) RecoverTrades(context.Context, vault.Credentials, binance.TradeQuery) ([]binance.Fill, bool, error) {
+	r.t.Fatal("unauthorized fill recovery reached exchange")
+	return nil, false, nil
+}
 func (r gateReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
 	r.t.Fatal("unexpected order query")
 	return binance.OrderLookup{}, nil
+}
+func (r gateReader) RecoverTrades(context.Context, vault.Credentials, binance.TradeQuery) ([]binance.Fill, bool, error) {
+	r.t.Fatal("unexpected fill recovery")
+	return nil, false, nil
 }
 
 func (r neverReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {

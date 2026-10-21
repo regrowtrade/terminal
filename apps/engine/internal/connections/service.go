@@ -29,10 +29,12 @@ type Store interface {
 	ReadIntentExpected(context.Context, string, string, string) (intentcheck.Expected, error)
 	SaveIntentObservation(context.Context, string, string, intentcheck.Expected, binance.OrderLookup) (database.StoredIntentObservation, error)
 	ListIntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error)
+	SaveRecoveredFills(context.Context, string, string, []binance.Fill) (database.RecoveredFillsResult, error)
 }
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
 	LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error)
+	RecoverTrades(context.Context, vault.Credentials, binance.TradeQuery) ([]binance.Fill, bool, error)
 }
 type Service struct {
 	Store  Store
@@ -116,6 +118,38 @@ func (s *Service) LookupOrder(ctx context.Context, hash, account string, query b
 		return binance.OrderLookup{}, err
 	}
 	return result, nil
+}
+
+// RecoverFills reads a bounded REST trade window and upserts the validated
+// fills into the durable deduplicated table. Recovered fills only add evidence;
+// they never infer continuity, enable execution or overwrite existing rows.
+func (s *Service) RecoverFills(ctx context.Context, hash, account string, query binance.TradeQuery) (binance.FillRecovery, error) {
+	if !query.Valid() {
+		return binance.FillRecovery{}, binance.ErrTradeQuery
+	}
+	if s == nil || s.Store == nil || s.Vault == nil || s.Reader == nil {
+		return binance.FillRecovery{}, ErrDisabled
+	}
+	binding, envelope, err := s.Store.ReadAccountCredential(ctx, hash, account)
+	if err != nil {
+		return binance.FillRecovery{}, err
+	}
+	if binding.AccountID != account || binding.Exchange != "binance" || binding.Environment != "production" {
+		return binance.FillRecovery{}, vault.ErrVault
+	}
+	credentials, err := s.Vault.Open(binding, envelope)
+	if err != nil {
+		return binance.FillRecovery{}, err
+	}
+	fills, truncated, err := s.Reader.RecoverTrades(ctx, credentials, query)
+	if err != nil {
+		return binance.FillRecovery{}, err
+	}
+	result, err := s.Store.SaveRecoveredFills(ctx, hash, account, fills)
+	if err != nil {
+		return binance.FillRecovery{}, err
+	}
+	return binance.FillRecovery{Source: "binance-production", Mode: "read_only", ExecutionReady: false, Symbol: query.Symbol, StartTime: query.StartTime, EndTime: query.EndTime, Recovered: result.Recovered, Duplicates: result.Duplicates, Truncated: truncated}, nil
 }
 
 func (s *Service) Comparison(ctx context.Context, hash, account string) (database.StoredComparison, error) {

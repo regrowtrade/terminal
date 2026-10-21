@@ -30,6 +30,10 @@ func (f *fakeConnections) LookupOrder(context.Context, string, string, binance.O
 	f.calls++
 	return binance.OrderLookup{}, f.err
 }
+func (f *fakeConnections) RecoverFills(context.Context, string, string, binance.TradeQuery) (binance.FillRecovery, error) {
+	f.calls++
+	return binance.FillRecovery{}, f.err
+}
 
 func (f *fakeConnections) State(context.Context, string) (connections.State, error) {
 	f.calls++

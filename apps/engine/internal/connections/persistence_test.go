@@ -68,9 +68,17 @@ func (s *snapshotStore) SaveOrderObservation(context.Context, string, string, bi
 	s.saves++
 	return s.err
 }
+func (s *snapshotStore) SaveRecoveredFills(context.Context, string, string, []binance.Fill) (database.RecoveredFillsResult, error) {
+	s.saves++
+	return database.RecoveredFillsResult{}, s.err
+}
 func (r *snapshotReader) LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error) {
 	r.calls++
 	return binance.OrderLookup{}, r.err
+}
+func (r *snapshotReader) RecoverTrades(context.Context, vault.Credentials, binance.TradeQuery) ([]binance.Fill, bool, error) {
+	r.calls++
+	return nil, false, r.err
 }
 
 func (r *snapshotReader) Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error) {

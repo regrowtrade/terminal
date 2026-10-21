@@ -97,6 +97,7 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	testUserEventLifecycle(t, ctx, store, hash, id)
 	testStreamStateLifecycle(t, ctx, store, hash, id)
 	testFillLifecycle(t, ctx, store, runtimeURI, hash, id)
+	t.Run("recovered_fills", func(t *testing.T) { testRecoveredFillsLifecycle(t, ctx, store, hash, id) })
 	t.Run("order_observations", func(t *testing.T) { testOrderObservationLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("strategy_plans", func(t *testing.T) { testPlanLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("legacy_snapshot_transition", func(t *testing.T) {
