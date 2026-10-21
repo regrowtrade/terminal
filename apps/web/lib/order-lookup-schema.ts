@@ -45,7 +45,15 @@ const queriedOrderSchema = z
     symbol,
     side: z.enum(["BUY", "SELL"]),
     positionSide: z.enum(["BOTH", "LONG", "SHORT"]),
-    type: z.enum(["LIMIT", "MARKET"]),
+    type: z.enum([
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET",
+    ]),
     status: z.enum([
       "NEW",
       "PARTIALLY_FILLED",
@@ -61,7 +69,11 @@ const queriedOrderSchema = z
     price: nonnegative,
     avgPrice: nonnegative,
     reduceOnly: z.boolean(),
-    closePosition: z.literal(false),
+    closePosition: z.boolean(),
+    stopPrice: nonnegative.optional(),
+    workingType: z.enum(["MARK_PRICE", "CONTRACT_PRICE"]).optional(),
+    activatePrice: nonnegative.optional(),
+    priceRate: nonnegative.optional(),
     updateTime: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   })
   .strict()
@@ -74,14 +86,48 @@ const queriedOrderSchema = z
       return false;
     const qty = new Decimal(o.origQty),
       executed = new Decimal(o.executedQty),
+      price = new Decimal(o.price),
       average = new Decimal(o.avgPrice);
-    if (
-      !qty.gt(0) ||
-      executed.gt(qty) ||
-      executed.gt(0) !== average.gt(0) ||
-      (o.type === "LIMIT" && !new Decimal(o.price).gt(0))
-    )
+    if (!qty.gt(0) || executed.gt(qty) || executed.gt(0) !== average.gt(0))
       return false;
+    const stop = o.stopPrice ?? "";
+    const working = o.workingType ?? "";
+    const activate = o.activatePrice ?? "";
+    const rate = o.priceRate ?? "";
+    if (o.type === "LIMIT" || o.type === "MARKET") {
+      if (o.closePosition) return false;
+      if (o.type === "LIMIT" && !price.gt(0)) return false;
+      if (
+        o.stopPrice !== undefined ||
+        o.workingType !== undefined ||
+        o.activatePrice !== undefined ||
+        o.priceRate !== undefined
+      )
+        return false;
+    } else {
+      if (working !== "MARK_PRICE" && working !== "CONTRACT_PRICE")
+        return false;
+      if (!nonnegative.safeParse(stop).success) return false;
+      if (o.type === "TRAILING_STOP_MARKET") {
+        if (!new Decimal(activate).gt(0) || !new Decimal(rate).gt(0))
+          return false;
+        const r = new Decimal(rate);
+        if (r.lt("0.1") || r.gt("10")) return false;
+      } else {
+        if (!new Decimal(stop).gt(0)) return false;
+        if (activate !== "" && !nonnegative.safeParse(activate).success)
+          return false;
+        if (rate !== "" && !nonnegative.safeParse(rate).success) return false;
+      }
+      if ((o.type === "STOP" || o.type === "TAKE_PROFIT") && !price.gt(0))
+        return false;
+      if (
+        o.closePosition &&
+        o.type !== "STOP_MARKET" &&
+        o.type !== "TAKE_PROFIT_MARKET"
+      )
+        return false;
+    }
     if (o.status === "NEW" || o.status === "REJECTED") return executed.isZero();
     if (o.status === "PARTIALLY_FILLED")
       return executed.gt(0) && executed.lt(qty);

@@ -26,8 +26,9 @@ func (q OrderQuery) Valid() bool {
 	return instrument.MatchString(q.Symbol) && ((q.OrderID != "" && q.ClientOrderID == "" && validID(q.OrderID)) || (q.ClientOrderID != "" && q.OrderID == "" && normalClientID.MatchString(q.ClientOrderID)))
 }
 
-// QueriedOrder describes a single normal LIMIT/MARKET order, not its individual
-// fills, position closure or strategy ownership. Conditional/algo lookup is separate.
+// QueriedOrder describes a single normal LIMIT/MARKET or conditional
+// (STOP/TAKE_PROFIT/…/TRAILING_STOP_MARKET) order, not its individual fills,
+// position closure or strategy ownership. Algo (algoType) orders are separate.
 type QueriedOrder struct {
 	OrderID       string `json:"orderId"`
 	ClientOrderID string `json:"clientOrderId"`
@@ -40,6 +41,10 @@ type QueriedOrder struct {
 	Executed      string `json:"executedQty"`
 	Price         string `json:"price"`
 	AveragePrice  string `json:"avgPrice"`
+	StopPrice     string `json:"stopPrice,omitempty"`
+	WorkingType   string `json:"workingType,omitempty"`
+	ActivatePrice string `json:"activatePrice,omitempty"`
+	PriceRate     string `json:"priceRate,omitempty"`
 	ReduceOnly    bool   `json:"reduceOnly"`
 	ClosePosition bool   `json:"closePosition"`
 	UpdateTime    int64  `json:"updateTime"`
@@ -60,9 +65,26 @@ type OrderLookup struct {
 func validQueriedOrder(o QueriedOrder, q OrderQuery) bool {
 	if !validID(o.OrderID) || !normalClientID.MatchString(o.ClientOrderID) || o.Symbol != q.Symbol ||
 		(q.OrderID != "" && o.OrderID != q.OrderID) || (q.ClientOrderID != "" && o.ClientOrderID != q.ClientOrderID) ||
-		!orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) || (o.Type != "LIMIT" && o.Type != "MARKET") || o.ClosePosition ||
-		!positive(o.Quantity) || !numeric(o.Executed, true) || !numeric(o.Price, true) || !numeric(o.AveragePrice, true) ||
-		(o.Type == "LIMIT" && !positive(o.Price)) {
+		!orderIdentity(o.Symbol, o.Side, o.PositionSide, o.UpdateTime) ||
+		!positive(o.Quantity) || !numeric(o.Executed, true) || !numeric(o.Price, true) || !numeric(o.AveragePrice, true) {
+		return false
+	}
+	switch {
+	case o.Type == "LIMIT" || o.Type == "MARKET":
+		// The engine normalizes ordinary orders to carry no conditional fields;
+		// a conditional trigger on a plain order is rejected, never guessed.
+		if o.StopPrice != "" || o.WorkingType != "" || o.ActivatePrice != "" || o.PriceRate != "" ||
+			o.ClosePosition || (o.Type == "LIMIT" && !positive(o.Price)) {
+			return false
+		}
+	case conditional(o.Type):
+		if !numeric(o.StopPrice, true) ||
+			!conditionalFields(o.Type, o.StopPrice, o.ActivatePrice, o.PriceRate, o.WorkingType) ||
+			((o.Type == "STOP" || o.Type == "TAKE_PROFIT") && !positive(o.Price)) ||
+			(o.ClosePosition && o.Type != "STOP_MARKET" && o.Type != "TAKE_PROFIT_MARKET") {
+			return false
+		}
+	default:
 		return false
 	}
 	qty, _ := decimal.NewFromString(o.Quantity)
@@ -139,6 +161,11 @@ func (c *Client) LookupOrder(ctx context.Context, credentials vault.Credentials,
 		}
 		o := raw.QueriedOrder
 		o.OrderID, o.ReduceOnly, o.ClosePosition = raw.ID.String(), *raw.Reduce, *raw.Close
+		if o.Type == "LIMIT" || o.Type == "MARKET" {
+			// Binance echoes conditional-shaped fields even on plain orders;
+			// normalize them away so the evidence never implies a trigger.
+			o.StopPrice, o.WorkingType, o.ActivatePrice, o.PriceRate = "", "", "", ""
+		}
 		r.Outcome, r.Order = "observed", &o
 	}
 	if err := ValidateOrderLookup(r); err != nil {

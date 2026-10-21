@@ -13,6 +13,90 @@ import (
 
 const queriedNormalOrder = `{"orderId":9007199254740993,"clientOrderId":"synthetic-limit","symbol":"BTCUSDT","side":"BUY","positionSide":"SHORT","type":"LIMIT","status":"FILLED","origQty":"2.000","executedQty":"2.000","price":"90.00000001","avgPrice":"89.12345678","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`
 
+func TestLookupConditionalOrdersValidatedAndPreserved(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, kind, trigger, working string
+		closePosition                      bool
+	}{
+		{"stop market", `{"orderId":9007199254740993,"clientOrderId":"synthetic-sl","symbol":"BTCUSDT","side":"SELL","positionSide":"LONG","type":"STOP_MARKET","status":"NEW","origQty":"2.000","executedQty":"0","price":"0","avgPrice":"0","stopPrice":"95.000","workingType":"MARK_PRICE","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`, "STOP_MARKET", "95.000", "MARK_PRICE", false},
+		{"take profit market close", `{"orderId":9007199254740993,"clientOrderId":"synthetic-tp","symbol":"BTCUSDT","side":"SELL","positionSide":"LONG","type":"TAKE_PROFIT_MARKET","status":"NEW","origQty":"2.000","executedQty":"0","price":"0","avgPrice":"0","stopPrice":"106","workingType":"CONTRACT_PRICE","reduceOnly":true,"closePosition":true,"updateTime":1750514941540}`, "TAKE_PROFIT_MARKET", "106", "CONTRACT_PRICE", true},
+		{"stop limit", `{"orderId":9007199254740993,"clientOrderId":"synthetic-stop","symbol":"BTCUSDT","side":"SELL","positionSide":"LONG","type":"STOP","status":"NEW","origQty":"2.000","executedQty":"0","price":"95.5","avgPrice":"0","stopPrice":"95.000","workingType":"CONTRACT_PRICE","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`, "STOP", "95.000", "CONTRACT_PRICE", false},
+		{"trailing stop", `{"orderId":9007199254740993,"clientOrderId":"synthetic-trail","symbol":"BTCUSDT","side":"SELL","positionSide":"LONG","type":"TRAILING_STOP_MARKET","status":"NEW","origQty":"2.000","executedQty":"0","price":"0","avgPrice":"0","stopPrice":"0","activatePrice":"100","priceRate":"2","workingType":"MARK_PRICE","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`, "TRAILING_STOP_MARKET", "", "MARK_PRICE", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := credentials()
+			result, err := fakeClient(t, key, safePermissions(), map[string]string{"/fapi/v1/order": tc.body}).LookupOrder(context.Background(), key, OrderQuery{Symbol: "BTCUSDT", OrderID: "9007199254740993"})
+			if err != nil || result.Outcome != "observed" || result.ExecutionReady || result.Order == nil || result.Order.Type != tc.kind || result.Order.ClosePosition != tc.closePosition || result.Order.WorkingType != tc.working {
+				t.Fatal("conditional order lost identity or semantics", err, result.Order)
+			}
+			if tc.trigger != "" && result.Order.StopPrice != tc.trigger {
+				t.Fatal("conditional trigger lost", result.Order.StopPrice)
+			}
+			if tc.kind == "TRAILING_STOP_MARKET" && (result.Order.ActivatePrice != "100" || result.Order.PriceRate != "2") {
+				t.Fatal("trailing activation or rate lost")
+			}
+			body, _ := json.Marshal(result)
+			if strings.Contains(string(body), key.APIKey) || strings.Contains(string(body), key.APISecret) {
+				t.Fatal("secret exposed")
+			}
+		})
+	}
+}
+
+func TestLookupRejectsInvalidConditionalOrders(t *testing.T) {
+	base := `{"orderId":9007199254740993,"clientOrderId":"synthetic-sl","symbol":"BTCUSDT","side":"SELL","positionSide":"LONG","type":"STOP_MARKET","status":"NEW","origQty":"2.000","executedQty":"0","price":"0","avgPrice":"0","stopPrice":"95.000","workingType":"MARK_PRICE","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"missing working type", func(o map[string]any) { o["workingType"] = "" }},
+		{"invalid working type", func(o map[string]any) { o["workingType"] = "LAST_PRICE" }},
+		{"zero trigger", func(o map[string]any) { o["stopPrice"] = "0" }},
+		{"negative trigger", func(o map[string]any) { o["stopPrice"] = "-1" }},
+		{"close on stop market limit", func(o map[string]any) { o["type"] = "STOP"; o["price"] = "95"; o["closePosition"] = true }},
+		{"limit stop without price", func(o map[string]any) { o["type"] = "STOP"; o["price"] = "0" }},
+		{"trailing bad rate", func(o map[string]any) {
+			o["type"] = "TRAILING_STOP_MARKET"
+			o["price"] = "0"
+			o["stopPrice"] = "0"
+			o["activatePrice"] = "100"
+			o["priceRate"] = "0.05"
+		}},
+		{"trailing missing activation", func(o map[string]any) {
+			o["type"] = "TRAILING_STOP_MARKET"
+			o["price"] = "0"
+			o["stopPrice"] = "0"
+			o["activatePrice"] = ""
+			o["priceRate"] = "2"
+		}},
+	} {
+		var order map[string]any
+		decoder := json.NewDecoder(strings.NewReader(base))
+		decoder.UseNumber()
+		if err := decoder.Decode(&order); err != nil {
+			t.Fatal(err)
+		}
+		tc.mutate(order)
+		body, _ := json.Marshal(order)
+		key := credentials()
+		c := fakeClient(t, key, safePermissions(), map[string]string{"/fapi/v1/order": string(body)})
+		if _, err := c.LookupOrder(context.Background(), key, OrderQuery{Symbol: "BTCUSDT", OrderID: "9007199254740993"}); !errors.Is(err, ErrResponse) {
+			t.Fatal("invalid conditional order accepted", tc.name, err)
+		}
+	}
+}
+
+func TestLookupNormalOrderEchoesNoConditionalFields(t *testing.T) {
+	// Binance can echo stopPrice/workingType even on plain orders; the evidence
+	// must normalize them away rather than implying a trigger exists.
+	withEcho := `{"orderId":9007199254740993,"clientOrderId":"synthetic-limit","symbol":"BTCUSDT","side":"BUY","positionSide":"SHORT","type":"LIMIT","status":"FILLED","origQty":"2.000","executedQty":"2.000","price":"90.00000001","avgPrice":"89.12345678","stopPrice":"0","workingType":"CONTRACT_PRICE","reduceOnly":true,"closePosition":false,"updateTime":1750514941540}`
+	key := credentials()
+	result, err := fakeClient(t, key, safePermissions(), map[string]string{"/fapi/v1/order": withEcho}).LookupOrder(context.Background(), key, OrderQuery{Symbol: "BTCUSDT", OrderID: "9007199254740993"})
+	if err != nil || result.Order == nil || result.Order.StopPrice != "" || result.Order.WorkingType != "" || result.Order.ActivatePrice != "" || result.Order.PriceRate != "" {
+		t.Fatal("normal order echoed conditional fields", err, result.Order)
+	}
+}
+
 func TestLookupOrderSignedSelectorsAndPrecision(t *testing.T) {
 	for _, query := range []OrderQuery{{Symbol: "BTCUSDT", OrderID: "9007199254740993"}, {Symbol: "BTCUSDT", ClientOrderID: "synthetic-limit"}} {
 		key := credentials()
