@@ -186,3 +186,66 @@ it("rejects zero quantity even when Decimal considers its sign positive", () => 
     }).success,
   ).toBe(false);
 });
+
+it("accepts validated conditional orders and rejects malformed ones", () => {
+  const conditional = () => ({
+    ...syntheticOrderLookup(),
+    order: {
+      orderId: "9007199254740993",
+      clientOrderId: "synthetic-sl",
+      symbol: "BTCUSDT",
+      side: "SELL",
+      positionSide: "LONG",
+      type: "STOP_MARKET",
+      status: "NEW",
+      origQty: "2.000",
+      executedQty: "0",
+      price: "0",
+      avgPrice: "0",
+      stopPrice: "95.000",
+      workingType: "MARK_PRICE",
+      reduceOnly: true,
+      closePosition: false,
+      updateTime: 1750514941540,
+    },
+  });
+  expect(orderLookupSchema.safeParse(conditional()).success).toBe(true);
+  const closePosition = conditional();
+  closePosition.order.type = "TAKE_PROFIT_MARKET";
+  closePosition.order.closePosition = true;
+  closePosition.order.stopPrice = "106";
+  closePosition.order.workingType = "CONTRACT_PRICE";
+  expect(orderLookupSchema.safeParse(closePosition).success).toBe(true);
+  for (const mutate of [
+    (o: Record<string, unknown>) => {
+      o.workingType = "";
+    },
+    (o: Record<string, unknown>) => {
+      o.stopPrice = "0";
+    },
+    (o: Record<string, unknown>) => {
+      o.workingType = "LAST_PRICE";
+    },
+    (o: Record<string, unknown>) => {
+      o.type = "STOP";
+      o.price = "95";
+      o.closePosition = true;
+    },
+    (o: Record<string, unknown>) => {
+      o.type = "STOP";
+      o.price = "0";
+    },
+  ]) {
+    const body = conditional();
+    mutate(body.order as unknown as Record<string, unknown>);
+    expect(orderLookupSchema.safeParse(body).success).toBe(false);
+  }
+  // Ordinary orders must not echo conditional-shaped fields.
+  const normal = syntheticOrderLookup();
+  expect(
+    orderLookupSchema.safeParse({
+      ...normal,
+      order: { ...normal.order, stopPrice: "0", workingType: "CONTRACT_PRICE" },
+    }).success,
+  ).toBe(false);
+});

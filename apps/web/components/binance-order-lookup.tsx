@@ -84,14 +84,14 @@ export function BinanceOrderLookup({
   return (
     <section
       className="order-lookup"
-      aria-label="Consulta de orden normal"
+      aria-label="Consulta de orden"
       aria-busy={busy}
     >
-      <h3>Investigar una orden normal</h3>
+      <h3>Investigar una orden</h3>
       <p className="muted-copy">
-        Consulta manual de LIMIT/MARKET por símbolo e ID. No consulta órdenes
-        condicionales/algo, no reconstruye fills y no confirma protección ni
-        cierre de posición.
+        Consulta manual de LIMIT/MARKET o condicional (STOP/TAKE_PROFIT) por
+        símbolo e ID. No consulta órdenes algo, no reconstruye fills y no
+        confirma protección ni cierre de posición.
       </p>
       <label htmlFor="order-lookup-symbol">Símbolo USDT</label>
       <input
@@ -179,6 +179,25 @@ export function BinanceOrderLookup({
                 <dd>
                   {result.order.price} / {result.order.avgPrice}
                 </dd>
+                {result.order.type !== "LIMIT" &&
+                  result.order.type !== "MARKET" && (
+                    <>
+                      <dt>Disparo / tipo de precio de activación</dt>
+                      <dd>
+                        {result.order.stopPrice || "—"} /{" "}
+                        {result.order.workingType || "—"}
+                      </dd>
+                      {result.order.type === "TRAILING_STOP_MARKET" && (
+                        <>
+                          <dt>Activación / tasa de retroceso</dt>
+                          <dd>
+                            {result.order.activatePrice || "—"} /{" "}
+                            {result.order.priceRate || "—"}
+                          </dd>
+                        </>
+                      )}
+                    </>
+                  )}
                 <dt>Actualización declarada por Binance</dt>
                 <dd>
                   {new Date(result.order.updateTime).toLocaleString("es")}

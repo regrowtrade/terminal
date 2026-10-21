@@ -414,7 +414,7 @@ paths:
   /v1/connections/binance/order:
     post:
       operationId: lookupBinanceNormalOrder
-      description: Explicit signed GET of a normal LIMIT/MARKET order by symbol and exactly one identifier. Authenticates session and account ownership before decrypting, then rechecks session/credential ownership when persisting evidence with audit. Does not submit, cancel, synthesize fills, change snapshots/continuity or enable execution. Exchange code -2013 returns a durable unresolved observation (200), never evidence that an order did not exist. Conditional/algo lookup and automatic recovery remain unsupported. Web proxy accepts the same fields except tokenHash, which it derives server-side; all responses are no-store.
+      description: Explicit signed GET of a normal LIMIT/MARKET or conditional STOP/TAKE_PROFIT (including STOP_MARKET/TAKE_PROFIT_MARKET/TRAILING_STOP_MARKET) order by symbol and exactly one identifier. Authenticates session and account ownership before decrypting, then rechecks session/credential ownership when persisting evidence with audit. Does not submit, cancel, synthesize fills, change snapshots/continuity or enable execution. Exchange code -2013 returns a durable unresolved observation (200), never evidence that an order did not exist. Algo (algoType) lookup and automatic recovery remain unsupported. Ordinary orders never echo conditional fields. Web proxy accepts the same fields except tokenHash, which it derives server-side; all responses are no-store.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -637,7 +637,7 @@ components:
     QueriedNormalOrder:
       type: object
       additionalProperties: false
-      description: Exact decimal strings and int64 ID string. Quantity must be positive and executedQty <= origQty; NEW/REJECTED require zero executed, PARTIALLY_FILLED requires 0 < executed < origQty, FILLED requires equality. Positive executedQty requires positive avgPrice, otherwise avgPrice must be zero. LIMIT requires positive price. Symbol and the selected identifier must match the query. This is cumulative quantity, not a trade/fill ledger.
+      description: Exact decimal strings and int64 ID string. Quantity must be positive and executedQty <= origQty; NEW/REJECTED require zero executed, PARTIALLY_FILLED requires 0 < executed < origQty, FILLED requires equality. Positive executedQty requires positive avgPrice, otherwise avgPrice must be zero. LIMIT requires positive price; MARKET never carries a trigger. Conditional types (STOP/TAKE_PROFIT and their MARKET/TRAILING variants) require a valid workingType and trigger (stopPrice, or activatePrice/priceRate for trailing), STOP/TAKE_PROFIT require a positive limit price, and closePosition only appears on STOP_MARKET/TAKE_PROFIT_MARKET. Ordinary orders never echo stopPrice/workingType/activatePrice/priceRate. Symbol and the selected identifier must match the query. This is cumulative quantity, not a trade/fill ledger.
       required:
         [
           orderId,
@@ -661,7 +661,19 @@ components:
         symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
         side: { enum: [BUY, SELL] }
         positionSide: { enum: [BOTH, LONG, SHORT] }
-        type: { enum: [LIMIT, MARKET] }
+        type:
+          {
+            enum:
+              [
+                LIMIT,
+                MARKET,
+                STOP,
+                STOP_MARKET,
+                TAKE_PROFIT,
+                TAKE_PROFIT_MARKET,
+                TRAILING_STOP_MARKET,
+              ],
+          }
         status:
           {
             enum:
@@ -681,7 +693,11 @@ components:
         price: { $ref: "#/components/schemas/ExchangeNonnegative" }
         avgPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
         reduceOnly: { type: boolean }
-        closePosition: { const: false }
+        closePosition: { type: boolean }
+        stopPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        workingType: { enum: [MARK_PRICE, CONTRACT_PRICE] }
+        activatePrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        priceRate: { $ref: "#/components/schemas/ExchangeNonnegative" }
         updateTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
     BinanceOrderLookup:
       type: object
