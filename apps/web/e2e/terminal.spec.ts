@@ -266,7 +266,7 @@ test("normal-order lookup shows point-in-time evidence and unresolved absence wi
   await page
     .getByRole("button", { name: "Comprobar conexión", exact: true })
     .click();
-  const panel = page.getByRole("region", { name: "Consulta de orden normal" });
+  const panel = page.getByRole("region", { name: "Consulta de orden" });
   await expect(panel).toBeVisible();
   expect(reads).toBe(0);
   await panel.getByLabel("Símbolo USDT").fill("BTCUSDT");
