@@ -1,6 +1,6 @@
 # Revisión local para integrar la recuperación de fills y su UI
 
-Fecha: 22 de octubre de 2026. Rama de entrega: `feat/account-reconciliation-delivery`, creada desde `origin/main` (`25fa298`) tras verificar el merge del PR #18 (`feat/binance-fill-recovery`, `094dd15`). Conserva la UI y las correcciones que seguían locales en `feat/account-reconciliation-ui`. Esa base ya está aprobada; **la UI y las correcciones de esta revisión todavía no están integradas en main**.
+Fecha: 22 de octubre de 2026. Rama de entrega: `feat/account-reconciliation-delivery`, creada desde `origin/main` (`25fa298`) tras verificar el merge del PR #18 (`feat/binance-fill-recovery`, `094dd15`). Conserva la UI y las correcciones que seguían locales en `feat/account-reconciliation-ui`. **Esta entrega ya fue integrada por el propietario en `main` mediante el PR #19 (`1b9db06`)**. La verificación técnica descrita no acredita despliegue ni operación con una cuenta real.
 
 ## Alcance
 
@@ -31,7 +31,7 @@ Las pruebas del adaptador usan transportes sintéticos que exigen GET firmado, h
 
 ## Puertas pendientes
 
-1. Revisar las correcciones REST/proxy y el consumo UI como cambios separados en la entrega. La dependencia inicial ya se verificó en `origin/main` tras el PR #18; volver a comprobar diff/CI antes de integrar. No hay merge a `main` ni force-push por el agente.
-2. El propietario revisa y hace merge a `main`. Esta revisión no autoriza despliegue ni migraciones remotas.
+1. Revisión e integración por el propietario completadas mediante el PR #19; sin merge a `main` ni force-push por el agente. La verificación de CI remoto queda separada de los resultados locales aquí documentados.
+2. Esta revisión y el merge no autorizan despliegue ni migraciones remotas.
 3. Siguen pendientes monitor sincronizado, recuperación automática de estados ambiguos, consulta algo, ejecutor testnet recuperable y automatizaciones. El ledger/journal de resultados no se completa con estos fills.
 4. Validación operativa, despliegue Railway aprobado, salida fija, backups y restauración siguen siendo puertas independientes. No se conectaron claves ni cuentas reales.
