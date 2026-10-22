@@ -414,7 +414,7 @@ paths:
   /v1/connections/binance/order:
     post:
       operationId: lookupBinanceNormalOrder
-      description: Explicit signed GET of a normal LIMIT/MARKET or conditional STOP/TAKE_PROFIT (including STOP_MARKET/TAKE_PROFIT_MARKET/TRAILING_STOP_MARKET) order by symbol and exactly one identifier. Authenticates session and account ownership before decrypting, then rechecks session/credential ownership when persisting evidence with audit. Does not submit, cancel, synthesize fills, change snapshots/continuity or enable execution. Exchange code -2013 returns a durable unresolved observation (200), never evidence that an order did not exist. Algo (algoType) lookup and automatic recovery remain unsupported. Ordinary orders never echo conditional fields. Web proxy accepts the same fields except tokenHash, which it derives server-side; all responses are no-store.
+      description: Explicit signed GET of a normal LIMIT/MARKET or conditional STOP/TAKE_PROFIT (including STOP_MARKET/TAKE_PROFIT_MARKET/TRAILING_STOP_MARKET) order by symbol and exactly one identifier. Authenticates session and account ownership before decrypting, then rechecks session/credential ownership when persisting evidence with audit. Does not submit, cancel, synthesize fills, change snapshots/continuity or enable execution. Exchange code -2013 returns a durable unresolved observation (200), never evidence that an order did not exist. Algo (algoType) lookup uses the separate /algo endpoint; no automatic recovery. Ordinary orders never echo conditional fields. Web proxy accepts the same fields except tokenHash, which it derives server-side; all responses are no-store.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -440,6 +440,42 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BinanceOrderLookup" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/algo:
+    post:
+      operationId: lookupBinanceAlgoOrder
+      description: Explicit signed GET /fapi/v1/algoOrder with exactly one algoId or clientAlgoId, never normal-order selectors. The required symbol is an expected USDT symbol checked against the result; it is NOT sent to Binance because that endpoint accepts no symbol. Revalidates session and credential ownership when persisting append-only evidence and audit, before returning 200. Family is always algo. A child actualOrderId is only reported, never followed automatically or treated as a fill/position closure/protection/strategy ownership. Only HTTP 400 code -2013 is unresolved; all other upstream failures fail closed. No submission, cancellation, retries, snapshot/continuity changes or execution. Web proxy /api/connections/binance/algo derives tokenHash on the server; all responses are no-store.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId, symbol]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+                algoId: { $ref: "#/components/schemas/ExchangeOrderId" }
+                clientAlgoId:
+                  { $ref: "#/components/schemas/NormalClientOrderId" }
+              oneOf:
+                - required: [algoId]
+                - required: [clientAlgoId]
+      responses:
+        "200":
+          description: Durable point-in-time algo evidence, or unresolved absence; never execution readiness or a reconciled account state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinanceAlgoLookup" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -767,6 +803,119 @@ components:
             outcome: { const: observed }
             reason: { const: "" }
             order: { $ref: "#/components/schemas/QueriedNormalOrder" }
+        - properties:
+            outcome: { const: unresolved }
+            reason: { const: exchange_not_found }
+            order: { type: "null" }
+    AlgoOrderQuery:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        algoId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientAlgoId: { $ref: "#/components/schemas/NormalClientOrderId" }
+      oneOf:
+        - required: [algoId]
+        - required: [clientAlgoId]
+    QueriedAlgoOrder:
+      type: object
+      additionalProperties: false
+      description: Exact strings; algoStatus is not a normal-order fill status. Validated conditional fields and matching symbol/identifier. quantity may be zero only with closePosition on STOP_MARKET/TAKE_PROFIT_MARKET. STOP/TAKE_PROFIT require a positive price and trigger; trailing requires positive activatePrice and callbackRate in [0.1,10]. actualOrderId may be empty only with zero actualPrice/actualQty and no actualType. A nonempty child ID requires positive triggerTime; NEW requires no child and zero triggerTime. Optional actualQty must be nonnegative, <= quantity unless closePosition, and positive actualQty requires positive actualPrice. FINISHED does not prove a fill, closure or protection. Unknown statuses or incomplete trailing fields fail closed.
+      required:
+        [
+          algoId,
+          clientAlgoId,
+          algoType,
+          symbol,
+          side,
+          positionSide,
+          orderType,
+          algoStatus,
+          quantity,
+          price,
+          triggerPrice,
+          reduceOnly,
+          closePosition,
+          workingType,
+          updateTime,
+          actualOrderId,
+          actualPrice,
+          triggerTime,
+        ]
+      properties:
+        algoId: { $ref: "#/components/schemas/ExchangeOrderId" }
+        clientAlgoId: { $ref: "#/components/schemas/NormalClientOrderId" }
+        algoType: { const: CONDITIONAL }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        side: { enum: [BUY, SELL] }
+        positionSide: { enum: [BOTH, LONG, SHORT] }
+        orderType:
+          {
+            enum:
+              [
+                STOP,
+                STOP_MARKET,
+                TAKE_PROFIT,
+                TAKE_PROFIT_MARKET,
+                TRAILING_STOP_MARKET,
+              ],
+          }
+        algoStatus:
+          { enum: [NEW, CANCELED, TRIGGERED, FINISHED, REJECTED, EXPIRED] }
+        quantity: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        price: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        triggerPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        workingType: { enum: [MARK_PRICE, CONTRACT_PRICE] }
+        reduceOnly: { type: boolean }
+        closePosition: { type: boolean }
+        activatePrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        callbackRate: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        updateTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        actualOrderId:
+          oneOf:
+            - { const: "" }
+            - { $ref: "#/components/schemas/ExchangeOrderId" }
+        actualPrice: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        actualType: { enum: [LIMIT, MARKET] }
+        actualQty: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        triggerTime: { type: integer, minimum: 0, maximum: 9007199254740991 }
+    BinanceAlgoLookup:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          source,
+          mode,
+          family,
+          executionReady,
+          startedAt,
+          checkedAt,
+          query,
+          outcome,
+          reason,
+          order,
+        ]
+      description: Local query interval, 0 <= checkedAt - startedAt <= 18 seconds. Isolated from normal-order evidence by family/query fields. This is not an atomic account snapshot, ownership proof or automatic recovery.
+      properties:
+        source: { const: binance-production }
+        mode: { const: read_only }
+        family: { const: algo }
+        executionReady: { const: false }
+        startedAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+        query: { $ref: "#/components/schemas/AlgoOrderQuery" }
+        outcome: { enum: [observed, unresolved] }
+        reason: { enum: ["", exchange_not_found] }
+        order:
+          oneOf:
+            - { $ref: "#/components/schemas/QueriedAlgoOrder" }
+            - { type: "null" }
+      oneOf:
+        - properties:
+            outcome: { const: observed }
+            reason: { const: "" }
+            order: { $ref: "#/components/schemas/QueriedAlgoOrder" }
         - properties:
             outcome: { const: unresolved }
             reason: { const: exchange_not_found }

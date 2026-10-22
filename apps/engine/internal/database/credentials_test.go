@@ -100,6 +100,7 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	testFillLifecycle(t, ctx, store, runtimeURI, hash, id)
 	t.Run("recovered_fills", func(t *testing.T) { testRecoveredFillsLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("order_observations", func(t *testing.T) { testOrderObservationLifecycle(t, ctx, store, admin, hash, id) })
+	t.Run("algo_observations", func(t *testing.T) { testAlgoObservationLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("strategy_plans", func(t *testing.T) { testPlanLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("legacy_snapshot_transition", func(t *testing.T) {
 		testLegacySnapshotTransition(t, ctx, store, admin, adminURI, runtimeURI, hash, id)
@@ -122,6 +123,9 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	if err := store.SaveOrderObservation(ctx, hash, id, syntheticOrderLookup()); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can save order observations")
 	}
+	if err := store.SaveAlgoObservation(ctx, hash, id, syntheticAlgoLookup()); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("removed credential can save algo observations")
+	}
 	if _, err := store.SaveRecoveredFills(ctx, hash, id, []binance.Fill{}); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can save an empty fill recovery", err)
 	}
@@ -141,7 +145,7 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 		t.Fatal("removed credential can save intent observations", err)
 	}
 	var observations int
-	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM binance_order_observations WHERE account_id=$1`, id).Scan(&observations); err != nil || observations != 2 {
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM binance_order_observations WHERE account_id=$1`, id).Scan(&observations); err != nil || observations != 4 {
 		t.Fatal("credential deletion removed order evidence")
 	}
 	if plans, err := store.ListPlans(ctx, hash, id, 20); err != nil || len(plans) != 2 {

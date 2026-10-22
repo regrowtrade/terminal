@@ -90,6 +90,8 @@ func fakeClient(t *testing.T, c vault.Credentials, permissions map[string]bool, 
 			body = exchangeInfo
 		case "/fapi/v1/order":
 			body = queriedNormalOrder
+		case "/fapi/v1/algoOrder":
+			body = queriedAlgo
 		default:
 			t.Fatal("endpoint outside allowlist")
 		}

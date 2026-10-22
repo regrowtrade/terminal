@@ -26,6 +26,7 @@ type Store interface {
 	LatestStreamState(context.Context, string, string) (database.StreamState, error)
 	ListFills(context.Context, string, string, int64, int) ([]binance.Fill, int, bool, error)
 	SaveOrderObservation(context.Context, string, string, binance.OrderLookup) error
+	SaveAlgoObservation(context.Context, string, string, binance.AlgoLookup) error
 	ReadIntentExpected(context.Context, string, string, string) (intentcheck.Expected, error)
 	SaveIntentObservation(context.Context, string, string, intentcheck.Expected, binance.OrderLookup) (database.StoredIntentObservation, error)
 	ListIntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error)
@@ -34,6 +35,7 @@ type Store interface {
 type Reader interface {
 	Snapshot(context.Context, vault.Credentials) (binance.Snapshot, error)
 	LookupOrder(context.Context, vault.Credentials, binance.OrderQuery) (binance.OrderLookup, error)
+	LookupAlgoOrder(context.Context, vault.Credentials, binance.AlgoQuery) (binance.AlgoLookup, error)
 	RecoverTrades(context.Context, vault.Credentials, binance.TradeQuery) ([]binance.Fill, bool, error)
 }
 type Service struct {

@@ -33,6 +33,7 @@ func HandlerWithPlans(token string, check func(context.Context) error, sessions 
 	registerPlans(mux, token, plans)
 	registerIntentObservations(mux, token, connections)
 	registerFillRecovery(mux, token, connections)
+	registerAlgoLookup(mux, token, connections)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "ok", "mode": "simulation", "version": "0.1.0"})
 	})
