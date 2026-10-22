@@ -6,6 +6,14 @@ import {
 import { syntheticComparison } from "../tests/fixtures/comparison";
 import { syntheticOrderLookup } from "../tests/fixtures/order-lookup";
 import { syntheticReconciliation } from "../tests/fixtures/reconciliation";
+import {
+  syntheticIntentAccount,
+  syntheticIntentId,
+  syntheticPlanId,
+  syntheticSavedPlan,
+  syntheticSavedIntent,
+  syntheticIntentObservation,
+} from "../tests/fixtures/intent-investigation";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -43,7 +51,162 @@ test("requires login and protects the preview API", async ({
     );
     expect(reading.status()).toBe(401);
   }
+  for (const operation of ["observe", "observations"]) {
+    const response = await request.post(`/api/plans/intents/${operation}`, {
+      data: {
+        accountId: syntheticIntentAccount.id,
+        intentId: syntheticIntentId,
+      },
+    });
+    expect(response.status()).toBe(401);
+  }
 });
+
+for (const enabled of [true, false]) {
+  test(`saved intent investigation is explicit and historical evidence works with reader ${enabled ? "enabled" : "disabled"}`, async ({
+    page,
+  }) => {
+    await login(page);
+    const requests: string[] = [];
+    const other = "00000000-0000-4000-8000-000000000099";
+    await page.route("**/api/connections/binance/list", (route) =>
+      route.fulfill({
+        json: {
+          enabled,
+          accounts: [
+            syntheticIntentAccount,
+            { ...syntheticIntentAccount, id: other, name: "Other synthetic" },
+          ],
+        },
+      }),
+    );
+    let reads = 0;
+    await page.route("**/api/plans/**", (route) => {
+      const operation = new URL(route.request().url()).pathname.replace(
+        "/api/plans/",
+        "",
+      );
+      requests.push(operation);
+      const input = route.request().postDataJSON();
+      if (operation === "list")
+        return route.fulfill({
+          json: input.accountId === other ? [] : [syntheticSavedPlan()],
+        });
+      if (operation === "intents/list") {
+        expect(input).toEqual({
+          accountId: syntheticIntentAccount.id,
+          planId: syntheticPlanId,
+        });
+        return route.fulfill({
+          json: [
+            syntheticSavedIntent(),
+            {
+              ...syntheticSavedIntent(),
+              id: "00000000-0000-4000-8000-000000000098",
+              family: "conditional",
+              purpose: "TP",
+            },
+          ],
+        });
+      }
+      expect(input).toEqual({
+        accountId: syntheticIntentAccount.id,
+        intentId: syntheticIntentId,
+      });
+      if (operation === "intents/observations")
+        return route.fulfill({
+          json: enabled ? [syntheticIntentObservation()] : [],
+        });
+      if (operation === "intents/observe") {
+        expect(enabled).toBe(true);
+        reads++;
+        const item = syntheticIntentObservation();
+        if (reads === 2) {
+          item.report.assessment = "unresolved";
+          item.report.observation.outcome = "unresolved";
+          item.report.observation.reason = "exchange_not_found";
+          item.report.observation.order = null;
+        }
+        if (reads > 2)
+          return route.fulfill({
+            status: 409,
+            json: { error: "synthetic changed decision" },
+          });
+        return route.fulfill({ json: item });
+      }
+      return route.fulfill({
+        status: 503,
+        json: { error: "Unexpected synthetic operation" },
+      });
+    });
+    await page.goto("/settings");
+    const saved = page.locator('[aria-label="Planes guardados"]');
+    await expect(saved.getByText(/BTCUSDT · CLEAN/)).toBeVisible();
+    expect(requests).toEqual(["list"]);
+    await saved
+      .getByRole("button", { name: /Ver intenciones del plan/ })
+      .click();
+    await expect(saved.getByText(/Investigación no disponible/)).toBeVisible();
+    await expect(
+      saved.getByRole("button", { name: /Investigar TP/ }),
+    ).toHaveCount(0);
+    await saved.getByRole("button", { name: /Investigar ENTRY/ }).click();
+    const panel = saved.getByRole("region", {
+      name: "Investigación de intención",
+    });
+    await expect(panel).toBeVisible();
+    expect(requests).toEqual(["list", "intents/list"]);
+    const observe = panel.getByRole("button", {
+      name: "Consultar y guardar observación",
+    });
+    if (enabled) {
+      await observe.click();
+      await expect(panel.getByText(/ATRIBUTOS COINCIDENTES/)).toContainText(
+        "PROPIEDAD NO CONFIRMADA",
+      );
+      await expect(panel.getByText(/9007199254740993/)).toBeVisible();
+      await expect(
+        panel.getByText("2.000 / 0.500000000000000001", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByText("100.000 / 99.123456789012345678", { exact: true }),
+      ).toBeVisible();
+    } else await expect(observe).toBeDisabled();
+    await panel
+      .getByRole("button", { name: "Ver últimas 20 observaciones" })
+      .click();
+    await expect(
+      panel.getByText(/HISTORIAL GUARDADO · NO ACTUAL/),
+    ).toBeVisible();
+    await expect(panel.getByText(/OBSERVACIÓN PUNTUAL GUARDADA/)).toHaveCount(
+      0,
+    );
+    if (enabled) {
+      await observe.click();
+      await expect(panel.getByText(/NO RESUELTA/)).toContainText("No reenvíes");
+      await expect(panel.getByText(/HISTORIAL GUARDADO/)).toHaveCount(0);
+      await observe.click();
+      await expect(panel.getByRole("alert")).toContainText(
+        "La intención o su plan cambió",
+      );
+      await expect(panel.getByText(/NO RESUELTA/)).toHaveCount(0);
+    } else
+      await expect(
+        panel.getByText(/No hay observaciones guardadas/),
+      ).toContainText("No demuestra ausencia");
+    await expect(
+      panel.getByRole("button", { name: /ejecutar|reenviar|enviar orden/i }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await saved.getByLabel("Cuenta", { exact: true }).selectOption(other);
+    await expect(panel).toHaveCount(0);
+    await expect(saved.getByText(/Sin planes guardados/)).toBeVisible();
+  });
+}
 
 test("dashboard and a real Go preview work without executing orders", async ({
   page,
