@@ -134,6 +134,12 @@ it("lists persisted plans and their never-sent intents for an account", async ()
   render(<SavedPlans />);
   expect(await screen.findByText(/BTCUSDT · CLEAN/)).toBeVisible();
   expect(await screen.findByText(/NO EJECUTADO/)).toBeVisible();
-  await waitFor(() => expect(screen.getByText(/ENTRY/)).toBeVisible());
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: /Ver intenciones del plan/ }));
+  await waitFor(() =>
+    expect(screen.getByText("ENTRY", { exact: true })).toBeVisible(),
+  );
   expect(screen.getByText(/rt1234/)).toBeVisible();
 });

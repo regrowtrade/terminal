@@ -990,6 +990,25 @@ td small {
 .intent-list code {
   font-size: 10px;
 }
+.intent-investigation {
+  margin-top: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.intent-investigation dt {
+  margin-top: 10px;
+  color: var(--muted);
+}
+.intent-investigation dd {
+  margin-left: 0;
+}
+.intent-investigation .button,
+.saved-plan .button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 8px 8px 8px 0;
+}
 .settings-card .card-heading {
   padding: 22px 0;
   color: #9bad91;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import Decimal from "decimal.js";
 import { orderLookupSchema } from "./order-lookup-schema";
+import type { StoredIntent, StoredPlan } from "./saved-plans-schema";
 
 const positive = z
   .string()
@@ -80,3 +81,56 @@ export const intentObservationSchema = z
   });
 
 export type IntentObservation = z.infer<typeof intentObservationSchema>;
+
+export const intentObservationTargetSchema = expectedSchema.omit({
+  planFingerprint: true,
+});
+export type IntentObservationTarget = z.infer<
+  typeof intentObservationTargetSchema
+>;
+
+// UI availability is only a convenience; the engine rereads the owned plan and
+// validates its deterministic decomposition before any exchange access.
+export function intentObservationTarget(
+  plan: StoredPlan,
+  intent: StoredIntent,
+): IntentObservationTarget | null {
+  if (
+    plan.mode === "hedge" ||
+    plan.mode !== plan.parameters.mode ||
+    plan.symbol !== plan.parameters.symbol ||
+    plan.mode !== plan.plan.mode ||
+    plan.symbol !== plan.plan.symbol ||
+    intent.family !== "regular" ||
+    intent.planId !== plan.planId
+  )
+    return null;
+  const result = intentObservationTargetSchema.safeParse({
+    intentId: intent.id,
+    planId: plan.planId,
+    symbol: plan.symbol,
+    clientOrderId: intent.clientOrderId,
+    purpose: intent.purpose,
+    positionSide: intent.positionSide,
+    quantity: intent.quantity,
+    price: intent.price,
+  });
+  return result.success ? result.data : null;
+}
+
+export function matchesIntentObservationTarget(
+  observation: IntentObservation,
+  target: IntentObservationTarget,
+): boolean {
+  const e = observation.report.expected;
+  return (
+    e.intentId.toLowerCase() === target.intentId.toLowerCase() &&
+    e.planId.toLowerCase() === target.planId.toLowerCase() &&
+    e.symbol === target.symbol &&
+    e.clientOrderId === target.clientOrderId &&
+    e.purpose === target.purpose &&
+    e.positionSide === target.positionSide &&
+    new Decimal(e.quantity).eq(target.quantity) &&
+    new Decimal(e.price).eq(target.price)
+  );
+}
