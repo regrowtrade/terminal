@@ -19,6 +19,10 @@ import {
   fillRecoverySchema,
 } from "./fill-recovery-schema";
 import { boundedText } from "./request";
+import {
+  algoLookupRequestSchema,
+  algoLookupSchema,
+} from "./algo-lookup-schema";
 import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
 import { sessionBackend, sessionDigest } from "./sessions";
@@ -32,6 +36,7 @@ const responseSchemas = {
   events: eventsResponseSchema,
   reconcile: reconciliationReportSchema,
   order: orderLookupSchema,
+  algo: algoLookupSchema,
   "fills/recover": fillRecoverySchema,
 };
 function json(body: unknown, status: number) {
@@ -50,6 +55,7 @@ export async function connectionRequest(
     | "events"
     | "reconcile"
     | "order"
+    | "algo"
     | "fills/recover",
 ) {
   if (!(await authenticated()))
@@ -79,21 +85,23 @@ export async function connectionRequest(
       ? z.object({}).strict()
       : operation === "order"
         ? orderLookupRequestSchema
-        : operation === "fills/recover"
-          ? fillRecoveryRequestSchema
-          : operation === "events"
-            ? z
-                .object({
-                  accountId: z.uuid(),
-                  after: z
-                    .number()
-                    .int()
-                    .nonnegative()
-                    .max(Number.MAX_SAFE_INTEGER)
-                    .optional(),
-                })
-                .strict()
-            : z.object({ accountId: z.uuid() }).strict()
+        : operation === "algo"
+          ? algoLookupRequestSchema
+          : operation === "fills/recover"
+            ? fillRecoveryRequestSchema
+            : operation === "events"
+              ? z
+                  .object({
+                    accountId: z.uuid(),
+                    after: z
+                      .number()
+                      .int()
+                      .nonnegative()
+                      .max(Number.MAX_SAFE_INTEGER)
+                      .optional(),
+                  })
+                  .strict()
+              : z.object({ accountId: z.uuid() }).strict()
   ).safeParse(input);
   if (!parsed.success) return json({ error: "Solicitud inválida." }, 400);
   const cookie = (await cookies()).get(cookieName())?.value;
@@ -140,7 +148,9 @@ export async function connectionRequest(
     const body: unknown = JSON.parse(
       await boundedText(
         response,
-        operation === "order" ? 16 * 1024 : 8 * 1024 * 1024,
+        operation === "order" || operation === "algo"
+          ? 16 * 1024
+          : 8 * 1024 * 1024,
       ),
     );
     const data = responseSchemas[operation].parse(body);
@@ -163,6 +173,16 @@ export async function connectionRequest(
         received.endTime !== sent.endTime
       )
         throw new Error("Fill recovery query mismatch");
+    }
+    if (operation === "algo") {
+      const sent = algoLookupRequestSchema.parse(parsed.data);
+      const received = algoLookupSchema.parse(data);
+      if (
+        received.query.symbol !== sent.symbol ||
+        received.query.algoId !== sent.algoId ||
+        received.query.clientAlgoId !== sent.clientAlgoId
+      )
+        throw new Error("Algo query mismatch");
     }
     return json(data, 200);
   } catch {
