@@ -25,6 +25,60 @@ func saveFills(ctx context.Context, tx *sql.Tx, account, owner string, events []
 	return nil
 }
 
+// maxRecoveredFills bounds a manual REST fill recovery against abuse; it matches
+// the client-side page bound (maxTradePages x tradePageSize).
+const maxRecoveredFills = 20000
+
+// RecoveredFillsResult reports how many recovered fills were newly inserted
+// versus already-known duplicates. It never implies continuity or execution.
+type RecoveredFillsResult struct {
+	Recovered  int `json:"recovered"`
+	Duplicates int `json:"duplicates"`
+}
+
+// SaveRecoveredFills revalidates session and credential ownership, then upserts
+// already-validated fills into the durable deduplicated table in one
+// transaction. Nothing is updated, overwritten or deleted; only insertion with
+// ON CONFLICT DO NOTHING is allowed, so an ambiguous insert is never a fill.
+func (s *Store) SaveRecoveredFills(ctx context.Context, hash, account string, fills []binance.Fill) (RecoveredFillsResult, error) {
+	if !ownerUUID.MatchString(account) {
+		return RecoveredFillsResult{}, ErrAccountMissing
+	}
+	if len(fills) == 0 || len(fills) > maxRecoveredFills {
+		return RecoveredFillsResult{}, ErrSnapshotInvalid
+	}
+	var result RecoveredFillsResult
+	err := s.withSession(ctx, hash, func(tx *sql.Tx, owner string) error {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exchange_credentials WHERE account_id=$1 AND owner_id=$2)`, account, owner).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrAccountMissing
+		}
+		for _, fill := range fills {
+			res, err := tx.ExecContext(ctx, `INSERT INTO binance_fills(account_id,owner_id,order_id,trade_id,symbol,side,position_side,price,quantity,commission,commission_asset,event_time,transaction_time) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (account_id, order_id, trade_id) DO NOTHING`, account, owner, fill.OrderID, fill.TradeID, fill.Symbol, fill.Side, fill.PositionSide, fill.Price, fill.Quantity, fill.Commission, fill.CommissionAsset, fill.EventTime, fill.TransactionTime)
+			if err != nil {
+				return err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				result.Duplicates++
+			} else {
+				result.Recovered++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return RecoveredFillsResult{}, err
+	}
+	return result, nil
+}
+
 // ListFills returns the bounded, ascending deduplicated fills with event_time
 // strictly after the given exchange watermark, the complete total count and
 // whether the page was truncated. It requires a valid session and ownership.

@@ -147,3 +147,35 @@ func testFillLifecycle(t *testing.T, ctx context.Context, store *Store, runtimeU
 		t.Fatal("unknown account accepted fills")
 	}
 }
+
+// Runs only under TEST_DATABASE_URL (CI): recovered REST fills dedup against the
+// stream fills, require credentials/session and remain append-only under RLS.
+func testRecoveredFillsLifecycle(t *testing.T, ctx context.Context, store *Store, hash, account string) {
+	t.Helper()
+	fresh := binance.Fill{OrderID: "9007199254741111", TradeID: "22222222", Symbol: "BTCUSDT", Side: "BUY", PositionSide: "LONG", Price: "100.000", Quantity: "1.5", Commission: "-0.10", CommissionAsset: "USDT", EventTime: 5000, TransactionTime: 5000}
+	result, err := store.SaveRecoveredFills(ctx, hash, account, []binance.Fill{fresh})
+	if err != nil || result.Recovered != 1 || result.Duplicates != 0 {
+		t.Fatal("recovered fill not inserted", err, result)
+	}
+	// Recovering the same fill is an explicit duplicate, never an overwrite.
+	result, err = store.SaveRecoveredFills(ctx, hash, account, []binance.Fill{fresh})
+	if err != nil || result.Recovered != 0 || result.Duplicates != 1 {
+		t.Fatal("duplicate recovery not counted", err, result)
+	}
+	fills, total, truncated, err := store.ListFills(ctx, hash, account, 4000, 200)
+	if err != nil || truncated || total != 1 || len(fills) != 1 || fills[0].TradeID != "22222222" || fills[0].EventTime != 5000 {
+		t.Fatal("recovered fill did not layer on the exchange watermark", err, total)
+	}
+	if _, err := store.SaveRecoveredFills(ctx, hash, "bad", []binance.Fill{fresh}); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("invalid account accepted recovery")
+	}
+	if _, err := store.SaveRecoveredFills(ctx, hash, account, nil); !errors.Is(err, ErrSnapshotInvalid) {
+		t.Fatal("empty recovery accepted")
+	}
+	if _, err := store.SaveRecoveredFills(ctx, testDigest(), account, []binance.Fill{fresh}); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatal("unregistered session recovered fills")
+	}
+	if _, err := store.SaveRecoveredFills(ctx, hash, "00000000-0000-4000-8000-000000000099", []binance.Fill{fresh}); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("unknown account accepted recovery")
+	}
+}

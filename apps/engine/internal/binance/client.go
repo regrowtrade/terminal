@@ -99,12 +99,17 @@ func (c *Client) getWithParams(ctx context.Context, path string, credentials *va
 			}
 		}
 		max = 64 * 1024
+	case "/fapi/v1/userTrades":
+		if !validTradeParams(params) {
+			return ErrTradeQuery
+		}
+		max = 8 * 1024 * 1024
 	case "/sapi/v1/account/apiRestrictions":
 		origin = "https://api.binance.com"
 	default:
 		return ErrUnavailable
 	}
-	if path != "/fapi/v1/order" && len(params) != 0 {
+	if path != "/fapi/v1/order" && path != "/fapi/v1/userTrades" && len(params) != 0 {
 		return ErrUnavailable
 	}
 	// Public metadata never receives keys; private reads always require them.

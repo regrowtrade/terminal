@@ -447,6 +447,40 @@ paths:
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /v1/connections/binance/fills/recover:
+    post:
+      operationId: recoverBinanceFills
+      description: Explicit manual REST fill recovery over a bounded userTrades window, deduplicated into the durable fills table. Only validated USDT symbols and a window of at most seven days are accepted; pagination is bounded and truncation is reported. Recovered fills are point-in-time evidence layered on the snapshot cutoff, never continuity or execution readiness. Does not submit, cancel, infer fills from absence or overwrite existing rows. Rechecks session/credential ownership in the same transaction as the insert. Web proxy derives tokenHash and accepts only accountId/symbol/startTime/endTime; all responses are no-store.
+      security: [{ engineToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tokenHash, accountId, symbol, startTime, endTime]
+              properties:
+                tokenHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                accountId: { type: string, format: uuid }
+                symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+                startTime:
+                  { type: integer, minimum: 1, maximum: 9007199254740991 }
+                endTime:
+                  { type: integer, minimum: 1, maximum: 9007199254740991 }
+      responses:
+        "200":
+          description: Summary of recovered and already-known duplicates; truncated marks a bounded page limit, not a complete ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinanceFillRecovery" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /v1/plans/intents/observe:
     post:
       operationId: observeBinanceNormalIntent
@@ -737,6 +771,32 @@ components:
             outcome: { const: unresolved }
             reason: { const: exchange_not_found }
             order: { type: "null" }
+    BinanceFillRecovery:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          source,
+          mode,
+          executionReady,
+          symbol,
+          startTime,
+          endTime,
+          recovered,
+          duplicates,
+          truncated,
+        ]
+      description: Point-in-time summary of a manual REST fill recovery. recovered counts newly inserted rows, duplicates counts already-known (order, trade) keys, and truncated marks a bounded page limit. Never a reconciled ledger, continuity or execution readiness.
+      properties:
+        source: { const: binance-production }
+        mode: { const: read_only }
+        executionReady: { const: false }
+        symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
+        startTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        endTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recovered: { type: integer, minimum: 0 }
+        duplicates: { type: integer, minimum: 0 }
+        truncated: { type: boolean }
     StoredObservationComparison:
       type: object
       additionalProperties: false

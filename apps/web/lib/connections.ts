@@ -14,6 +14,10 @@ import {
   orderLookupRequestSchema,
   orderLookupSchema,
 } from "./order-lookup-schema";
+import {
+  fillRecoveryRequestSchema,
+  fillRecoverySchema,
+} from "./fill-recovery-schema";
 import { boundedText } from "./request";
 import { storedComparisonSchema } from "./observation-schema";
 import { sameOrigin, AttemptLimiter } from "./security";
@@ -28,6 +32,7 @@ const responseSchemas = {
   events: eventsResponseSchema,
   reconcile: reconciliationReportSchema,
   order: orderLookupSchema,
+  "fills/recover": fillRecoverySchema,
 };
 function json(body: unknown, status: number) {
   return Response.json(body, {
@@ -44,7 +49,8 @@ export async function connectionRequest(
     | "comparison"
     | "events"
     | "reconcile"
-    | "order",
+    | "order"
+    | "fills/recover",
 ) {
   if (!(await authenticated()))
     return json({ error: "Sesión requerida." }, 401);
@@ -73,19 +79,21 @@ export async function connectionRequest(
       ? z.object({}).strict()
       : operation === "order"
         ? orderLookupRequestSchema
-        : operation === "events"
-          ? z
-              .object({
-                accountId: z.uuid(),
-                after: z
-                  .number()
-                  .int()
-                  .nonnegative()
-                  .max(Number.MAX_SAFE_INTEGER)
-                  .optional(),
-              })
-              .strict()
-          : z.object({ accountId: z.uuid() }).strict()
+        : operation === "fills/recover"
+          ? fillRecoveryRequestSchema
+          : operation === "events"
+            ? z
+                .object({
+                  accountId: z.uuid(),
+                  after: z
+                    .number()
+                    .int()
+                    .nonnegative()
+                    .max(Number.MAX_SAFE_INTEGER)
+                    .optional(),
+                })
+                .strict()
+            : z.object({ accountId: z.uuid() }).strict()
   ).safeParse(input);
   if (!parsed.success) return json({ error: "Solicitud inválida." }, 400);
   const cookie = (await cookies()).get(cookieName())?.value;

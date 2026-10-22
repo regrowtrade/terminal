@@ -43,3 +43,5 @@ El propietario integró el PR #14 (`fbf35f6`). `feat/plans-ui` parte de ese `mai
 El propietario integró el PR #15 (`e6e77b0`). `feat/intent-order-observations` parte de ese `main`: investigación de intenciones normales con criterios persistidos, comparación de atributos, evidencia durable, auditoría e historia acotada. No confirma propiedad, modifica intenciones ni envía órdenes. Migración `0011` y grants explícitos; sin despliegue ni merge por el agente.
 
 El propietario integró el PR #16 (`05707be`). `feat/binance-conditional-order-lookup` parte de ese `main`: la consulta explícita de una orden acepta condicionales STOP/TAKE_PROFIT y variantes con `stopPrice`/`workingType` validados, sin cambiar la evidencia de las órdenes ordinarias ni añadir migración. Sin envío, sin consulta algo y sin observación de intenciones condicionales todavía.
+
+El propietario integró el PR #17 (`c15ca0f`). `feat/binance-fill-recovery` parte de ese `main`: recuperación manual de fills por REST en ventanas acotadas, deduplicada contra la tabla `0008` existente y sin migración. Sin envío, sin despliegue y sin merge por el agente.
