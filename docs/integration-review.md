@@ -23,6 +23,7 @@ Fecha: 22 de octubre de 2026. Rama de entrega: `feat/account-reconciliation-deli
 - `go test ./...`, `go vet ./...` desde `apps/engine`.
 - `npm run test:e2e`: escritorio/móvil, respuestas de cuenta sintéticas, sin claves ni exchange.
 - Resultado local: **215 pruebas web** y **22 pruebas de navegador** correctas. Las comprobaciones Go y PostgreSQL descritas también pasaron; esto no acredita CI remoto ni operación con una cuenta real.
+- `npm run format:check` en este checkout Windows informa finales CRLF en archivos existentes. Se corrigió el formato de la nueva prueba y se comprobaron los **125 archivos versionados** incluidos en el comando con finales LF normalizados en memoria: sin discrepancias de formato. No se reformateó el repositorio completo; el check de CI en Linux sigue siendo la puerta autoritativa.
 - PostgreSQL **15 local desechable**, en loopback y puerto aleatorio, con credenciales efímeras: `TEST_DATABASE_URL` configurada solo para la ejecución de `go test -count=1 -v ./internal/database ./cmd/snapshot-transition` y `node scripts/test-standalone.mjs`. Cluster detenido y eliminado tras verificar.
 - La ejecución PostgreSQL comprobó migraciones/RLS, recuperación vacía, deduplicación, credenciales retiradas, revocación, cuentas de otro propietario/entorno, conservación de snapshot/continuidad y rollback ante fallo de auditoría. El standalone de producción verificó login, preview y revocación individual/global con rechazo de cookies copiadas.
 

@@ -177,16 +177,14 @@ it("sends exact UTC criteria, retires the old report and never refreshes it auto
 });
 
 it("shows a saved empty recovery without claiming that no trades occurred", async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(
-      Response.json({
-        ...recovery,
-        recovered: 0,
-        duplicates: 0,
-        truncated: false,
-      }),
-    );
+  const fetch = vi.fn().mockResolvedValue(
+    Response.json({
+      ...recovery,
+      recovered: 0,
+      duplicates: 0,
+      truncated: false,
+    }),
+  );
   vi.stubGlobal("fetch", fetch);
   render(<BinanceReconciliation accountId={accountId} enabled />);
   fillWindow();
