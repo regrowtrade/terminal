@@ -450,7 +450,7 @@ paths:
   /v1/connections/binance/fills/recover:
     post:
       operationId: recoverBinanceFills
-      description: Explicit manual REST fill recovery over a bounded userTrades window, deduplicated into the durable fills table. Only validated USDT symbols and a window of at most seven days are accepted; pagination is bounded and truncation is reported. Recovered fills are point-in-time evidence layered on the snapshot cutoff, never continuity or execution readiness. Does not submit, cancel, infer fills from absence or overwrite existing rows. Rechecks session/credential ownership in the same transaction as the insert. Web proxy derives tokenHash and accepts only accountId/symbol/startTime/endTime; all responses are no-store.
+      description: Explicit manual REST fill recovery over a bounded userTrades window [startTime, endTime), deduplicated into the durable fills table. Only validated USDT symbols and a window of at most seven days are accepted; saturated windows are subdivided within 20 requests and truncation is reported if the budget is exhausted or one millisecond remains saturated. Recovered fills are point-in-time evidence layered on the snapshot cutoff, never continuity or execution readiness. Does not submit, cancel, infer fills from absence or overwrite existing rows. Rechecks session/credential ownership and writes audit counts in the same transaction as the inserts, including zero-result recoveries. Web proxy derives tokenHash and accepts only accountId/symbol/startTime/endTime; it verifies the response matches that query. All responses are no-store.
       security: [{ engineToken: [] }]
       requestBody:
         required: true
@@ -786,7 +786,7 @@ components:
           duplicates,
           truncated,
         ]
-      description: Point-in-time summary of a manual REST fill recovery. recovered counts newly inserted rows, duplicates counts already-known (order, trade) keys, and truncated marks a bounded page limit. Never a reconciled ledger, continuity or execution readiness.
+      description: Point-in-time summary of a manual REST fill recovery over [startTime, endTime). Empty windows succeed with zero counts after session/credential checks. recovered counts newly inserted rows and duplicates counts already-known (order, trade) keys. Saturated time windows are split within a 20-request budget, without combining fromId and timestamps; truncated marks an exhausted budget or a saturated millisecond that cannot be split. Never a reconciled ledger, continuity or execution readiness.
       properties:
         source: { const: binance-production }
         mode: { const: read_only }
@@ -794,8 +794,8 @@ components:
         symbol: { type: string, pattern: "^[A-Z0-9]{2,24}USDT$" }
         startTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
         endTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
-        recovered: { type: integer, minimum: 0 }
-        duplicates: { type: integer, minimum: 0 }
+        recovered: { type: integer, minimum: 0, maximum: 20000 }
+        duplicates: { type: integer, minimum: 0, maximum: 20000 }
         truncated: { type: boolean }
     StoredObservationComparison:
       type: object
@@ -1352,7 +1352,7 @@ components:
           eventTime,
           transactionTime,
         ]
-      description: A single TRADE execution observed in the stream, deduplicated by (orderId, tradeId). Amounts are original decimal strings; never inferred from absence.
+      description: A single TRADE execution observed in the stream or recovered by REST, deduplicated by (orderId, tradeId). Amounts are original decimal strings, including signed commissions from REST; never inferred from absence.
       properties:
         orderId: { $ref: "#/components/schemas/ExchangeOrderId" }
         tradeId: { $ref: "#/components/schemas/ExchangeOrderId" }
@@ -1361,7 +1361,7 @@ components:
         positionSide: { enum: [BOTH, LONG, SHORT] }
         price: { $ref: "#/components/schemas/ExchangeNonnegative" }
         quantity: { $ref: "#/components/schemas/ExchangeNonnegative" }
-        commission: { $ref: "#/components/schemas/ExchangeNonnegative" }
+        commission: { $ref: "#/components/schemas/ExchangeDecimal" }
         commissionAsset: { type: string, maxLength: 20 }
         eventTime: { type: integer, minimum: 1, maximum: 9007199254740991 }
         transactionTime:

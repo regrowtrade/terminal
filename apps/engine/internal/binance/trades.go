@@ -7,12 +7,13 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"regrow/engine/internal/vault"
 )
 
-const maxTradeWindowMs = int64(7 * 24 * 60 * 60 * 1000) // seven-day retention
+const maxTradeWindowMs = int64(7 * 24 * 60 * 60 * 1000) // maximum query span, not retention
 const maxTradePages = 20
 const tradePageSize = 1000
 
@@ -66,7 +67,7 @@ func (t tradeRow) fill() (Fill, error) {
 		(t.Side != "BUY" && t.Side != "SELL") ||
 		(t.PositionSide != "BOTH" && t.PositionSide != "LONG" && t.PositionSide != "SHORT") ||
 		!positive(t.Price) || !positive(t.Quantity) || !numeric(t.Commission, false) ||
-		t.CommissionAsset == "" || len(t.CommissionAsset) > 20 ||
+		t.CommissionAsset == "" || len(t.CommissionAsset) > 20 || strings.ContainsRune(t.CommissionAsset, '\x00') ||
 		t.Time <= 0 || t.Time > 9007199254740991 {
 		return Fill{}, ErrResponse
 	}
@@ -76,6 +77,19 @@ func (t tradeRow) fill() (Fill, error) {
 		PositionSide: t.PositionSide, Price: t.Price, Quantity: t.Quantity,
 		Commission: t.Commission, CommissionAsset: t.CommissionAsset,
 		EventTime: t.Time, TransactionTime: t.Time}, nil
+}
+
+// ValidateRecoveredFill repeats REST normalization checks at service/storage
+// boundaries. A REST trade has a single clock; it cannot invent an event time.
+func ValidateRecoveredFill(f Fill) error {
+	row := tradeRow{ID: json.Number(f.TradeID), OrderID: json.Number(f.OrderID),
+		Symbol: f.Symbol, Side: f.Side, PositionSide: f.PositionSide, Price: f.Price,
+		Quantity: f.Quantity, Commission: f.Commission, CommissionAsset: f.CommissionAsset,
+		Time: f.TransactionTime}
+	if _, err := row.fill(); err != nil || f.EventTime != f.TransactionTime {
+		return ErrResponse
+	}
+	return nil
 }
 
 // RecoverTrades reads the bounded window from the userTrades endpoint and
@@ -97,18 +111,20 @@ func (c *Client) RecoverTrades(ctx context.Context, credentials vault.Credential
 		return nil, false, err
 	}
 	fills := []Fill{}
-	seen := map[string]bool{}
+	seen := map[string]Fill{}
 	truncated := false
-	fromID := int64(0)
-	for page := 0; page < maxTradePages; page++ {
+	// Binance forbids fromId together with startTime/endTime. Split saturated
+	// time windows instead, without assuming newest/oldest-first response order.
+	// Subwindows are disjoint [start,end); endTime on the wire is inclusive.
+	pending := []TradeQuery{query}
+	for page := 0; page < maxTradePages && len(pending) > 0; page++ {
+		window := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
 		params := url.Values{
 			"symbol":    {query.Symbol},
-			"startTime": {strconv.FormatInt(query.StartTime, 10)},
-			"endTime":   {strconv.FormatInt(query.EndTime, 10)},
+			"startTime": {strconv.FormatInt(window.StartTime, 10)},
+			"endTime":   {strconv.FormatInt(window.EndTime-1, 10)},
 			"limit":     {strconv.Itoa(tradePageSize)},
-		}
-		if fromID > 0 {
-			params.Set("fromId", strconv.FormatInt(fromID, 10))
 		}
 		var rows []tradeRow
 		if err := c.getWithParams(ctx, "/fapi/v1/userTrades", &credentials, now(), params, &rows); err != nil {
@@ -117,11 +133,8 @@ func (c *Client) RecoverTrades(ctx context.Context, credentials vault.Credential
 		if rows == nil || len(rows) > tradePageSize {
 			return nil, false, ErrResponse
 		}
-		if len(rows) == 0 {
-			break
-		}
 		for _, row := range rows {
-			if row.Time < query.StartTime || row.Time >= query.EndTime {
+			if row.Symbol != query.Symbol || row.Time < window.StartTime || row.Time >= window.EndTime {
 				return nil, false, ErrResponse
 			}
 			fill, err := row.fill()
@@ -129,31 +142,37 @@ func (c *Client) RecoverTrades(ctx context.Context, credentials vault.Credential
 				return nil, false, err
 			}
 			key := fill.OrderID + ":" + fill.TradeID
-			if seen[key] {
+			if previous, ok := seen[key]; ok {
+				if previous != fill {
+					return nil, false, ErrResponse
+				}
 				continue
 			}
-			seen[key] = true
+			seen[key] = fill
 			fills = append(fills, fill)
 		}
-		if len(rows) < tradePageSize {
-			break
-		}
-		// userTrades is newest-first: the smallest id in this page is the oldest
-		// seen, and fromId pages strictly older. Guard against no-progress.
-		next, err := strconv.ParseInt(rows[len(rows)-1].ID.String(), 10, 64)
-		if err != nil || next <= 0 || (fromID > 0 && next >= fromID) {
-			return nil, false, ErrResponse
-		}
-		fromID = next
-		if page == maxTradePages-1 {
-			truncated = true
+		if len(rows) == tradePageSize {
+			if window.EndTime-window.StartTime == 1 {
+				// A saturated millisecond cannot be split safely. Do not skip it
+				// or present the page as a complete recovery.
+				truncated = true
+				continue
+			}
+			mid := window.StartTime + (window.EndTime-window.StartTime)/2
+			pending = append(pending,
+				TradeQuery{Symbol: query.Symbol, StartTime: mid, EndTime: window.EndTime},
+				TradeQuery{Symbol: query.Symbol, StartTime: window.StartTime, EndTime: mid})
 		}
 	}
+	truncated = truncated || len(pending) > 0
 	sort.SliceStable(fills, func(i, j int) bool {
 		if fills[i].EventTime != fills[j].EventTime {
 			return fills[i].EventTime < fills[j].EventTime
 		}
-		return fills[i].OrderID < fills[j].OrderID
+		if fills[i].OrderID != fills[j].OrderID {
+			return len(fills[i].OrderID) < len(fills[j].OrderID) || (len(fills[i].OrderID) == len(fills[j].OrderID) && fills[i].OrderID < fills[j].OrderID)
+		}
+		return len(fills[i].TradeID) < len(fills[j].TradeID) || (len(fills[i].TradeID) == len(fills[j].TradeID) && fills[i].TradeID < fills[j].TradeID)
 	})
 	return fills, truncated, nil
 }
@@ -161,7 +180,7 @@ func (c *Client) RecoverTrades(ctx context.Context, credentials vault.Credential
 // validTradeParams enforces the fixed allowlist for a signed userTrades request
 // at the transport boundary, before any signature is computed.
 func validTradeParams(params url.Values) bool {
-	if len(params) < 3 || len(params) > 5 {
+	if len(params) != 4 {
 		return false
 	}
 	for _, values := range params {
@@ -171,7 +190,7 @@ func validTradeParams(params url.Values) bool {
 	}
 	for key := range params {
 		switch key {
-		case "symbol", "startTime", "endTime", "limit", "fromId":
+		case "symbol", "startTime", "endTime", "limit":
 		default:
 			return false
 		}
@@ -182,13 +201,8 @@ func validTradeParams(params url.Values) bool {
 	if err1 != nil || err2 != nil || err3 != nil || !instrument.MatchString(params.Get("symbol")) {
 		return false
 	}
-	if start <= 0 || end <= start || end-start > maxTradeWindowMs || end > 9007199254740991 || limit < 1 || limit > tradePageSize {
+	if start <= 0 || end < start || end-start >= maxTradeWindowMs || end > 9007199254740991 || limit < 1 || limit > tradePageSize {
 		return false
-	}
-	if from := params.Get("fromId"); from != "" {
-		if n, err := strconv.ParseInt(from, 10, 64); err != nil || n <= 0 {
-			return false
-		}
 	}
 	return true
 }

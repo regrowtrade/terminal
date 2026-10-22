@@ -114,6 +114,21 @@ it("never exposes mismatched or unsafe responses", async () => {
       r.symbol = "BTCUSDC";
     },
     (r: ReturnType<typeof summary>) => {
+      r.symbol = "ETHUSDT";
+    },
+    (r: ReturnType<typeof summary>) => {
+      r.startTime++;
+    },
+    (r: ReturnType<typeof summary>) => {
+      r.endTime++;
+    },
+    (r: ReturnType<typeof summary>) => {
+      r.recovered = 20001;
+    },
+    (r: ReturnType<typeof summary>) => {
+      r.duplicates = 20000;
+    },
+    (r: ReturnType<typeof summary>) => {
       Object.assign(r, { secret: "x" });
     },
   ]) {
@@ -159,4 +174,18 @@ it("validates the recovery summary shape", () => {
   expect(
     fillRecoverySchema.safeParse({ ...summary(), endTime: 1 }).success,
   ).toBe(false);
+  expect(
+    fillRecoverySchema.safeParse({
+      ...summary(),
+      endTime: summary().startTime + 7 * 24 * 60 * 60 * 1000 + 1,
+    }).success,
+  ).toBe(false);
+});
+
+it("returns an authenticated zero-result recovery without inferring absence", async () => {
+  const body = { ...summary(), recovered: 0, duplicates: 0 };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  const response = await post(valid());
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(body);
 });

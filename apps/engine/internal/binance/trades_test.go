@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,17 +22,21 @@ func tradeRowAt(id, orderID, tms int64) tradeRow {
 	return tradeRow{ID: json.Number(strconv.FormatInt(id, 10)), OrderID: json.Number(strconv.FormatInt(orderID, 10)), Symbol: "BTCUSDT", Side: "BUY", PositionSide: "LONG", Price: "100", Quantity: "1", Commission: "-0.1", CommissionAsset: "USDT", Time: tms}
 }
 
-func fullTradePage(startID, baseTime int64) []tradeRow {
-	rows := make([]tradeRow, tradePageSize)
-	for i := 0; i < tradePageSize; i++ {
-		rows[i] = tradeRowAt(startID-int64(i), startID-int64(i)*2, baseTime-int64(i))
-	}
-	return rows
-}
-
 func tradesTransport(t *testing.T, c vault.Credentials, pages [][]tradeRow) roundTrip {
 	t.Helper()
 	idx := 0
+	return tradeResponses(t, c, func(url.Values) []tradeRow {
+		if idx >= len(pages) {
+			return []tradeRow{}
+		}
+		rows := pages[idx]
+		idx++
+		return rows
+	})
+}
+
+func tradeResponses(t *testing.T, c vault.Credentials, rows func(url.Values) []tradeRow) roundTrip {
+	t.Helper()
 	return roundTrip(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/fapi/v1/time":
@@ -40,6 +45,9 @@ func tradesTransport(t *testing.T, c vault.Credentials, pages [][]tradeRow) roun
 			raw, _ := json.Marshal(safePermissions())
 			return jsonResponse(string(raw))
 		case "/fapi/v1/userTrades":
+			if r.Method != http.MethodGet || r.URL.Host != "fapi.binance.com" {
+				t.Fatal("recovery changed fixed read-only destination")
+			}
 			if r.Header.Get("X-MBX-APIKEY") != c.APIKey {
 				t.Fatal("missing signed key")
 			}
@@ -51,11 +59,16 @@ func tradesTransport(t *testing.T, c vault.Credentials, pages [][]tradeRow) roun
 			if signature != hex.EncodeToString(mac.Sum(nil)) {
 				t.Fatal("invalid signature")
 			}
-			if idx >= len(pages) {
-				return jsonResponse("[]")
+			params := url.Values{}
+			for key, values := range q {
+				params[key] = values
 			}
-			body, _ := json.Marshal(pages[idx])
-			idx++
+			params.Del("timestamp")
+			params.Del("recvWindow")
+			if !validTradeParams(params) || params.Has("fromId") {
+				t.Fatal("recovery sent incompatible or unbounded selectors", params)
+			}
+			body, _ := json.Marshal(rows(q))
 			return jsonResponse(string(body))
 		default:
 			t.Fatal("unexpected path " + r.URL.Path)
@@ -66,28 +79,48 @@ func tradesTransport(t *testing.T, c vault.Credentials, pages [][]tradeRow) roun
 
 type vaultCredentials = vault.Credentials
 
-func TestRecoverTradesPaginatesValidatesAndDeduplicates(t *testing.T) {
-	c := credentials()
-	q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700000086400}
-	page1 := fullTradePage(5000, 1700000086000)
-	page2 := []tradeRow{tradeRowAt(3999, 3999, 1700000085000), tradeRowAt(3998, 3998, 1700000084999), tradeRowAt(3999, 3999, 1700000085000)}
-	client := newClient(tradesTransport(t, c, [][]tradeRow{page1, page2}))
-	fills, truncated, err := client.RecoverTrades(context.Background(), c, q)
-	if err != nil || truncated || len(fills) != tradePageSize+2 {
-		t.Fatal("recovery lost fills", err, len(fills), truncated)
-	}
-	for i := 1; i < len(fills); i++ {
-		if fills[i-1].EventTime > fills[i].EventTime {
-			t.Fatal("fills not ascending")
-		}
-	}
-	if fills[0].TradeID != "3998" || fills[len(fills)-1].TradeID != "5000" {
-		t.Fatal("boundary ordering wrong")
-	}
-	for _, f := range fills {
-		if f.EventTime != f.TransactionTime || f.Symbol != "BTCUSDT" {
-			t.Fatal("recovered fill lost clock or symbol semantics")
-		}
+func TestRecoverTradesSplitsWindowsIndependentOfResponseOrder(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(strconv.FormatBool(reverse), func(t *testing.T) {
+			c := credentials()
+			q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700000002000}
+			rows := make([]tradeRow, 1002)
+			for i := range rows {
+				rows[i] = tradeRowAt(9007199254740993+int64(i), 9007199254741111+int64(i), q.StartTime+int64(i))
+			}
+			calls := 0
+			client := newClient(tradeResponses(t, c, func(params url.Values) []tradeRow {
+				calls++
+				start, _ := strconv.ParseInt(params.Get("startTime"), 10, 64)
+				end, _ := strconv.ParseInt(params.Get("endTime"), 10, 64)
+				page := []tradeRow{}
+				for _, row := range rows {
+					if row.Time >= start && row.Time <= end {
+						page = append(page, row)
+					}
+				}
+				if reverse {
+					slices.Reverse(page)
+				}
+				if len(page) >= tradePageSize {
+					return page[:tradePageSize]
+				}
+				// Identical redelivery must not duplicate evidence.
+				if len(page) > 0 {
+					page = append(page, page[0])
+				}
+				return page
+			}))
+			fills, truncated, err := client.RecoverTrades(context.Background(), c, q)
+			if err != nil || truncated || len(fills) != len(rows) || calls <= 1 || calls > maxTradePages {
+				t.Fatal("recovery lost fills or exceeded request budget", err, len(fills), truncated, calls)
+			}
+			for i, fill := range fills {
+				if fill.TradeID != rows[i].ID.String() || fill.OrderID != rows[i].OrderID.String() || fill.EventTime != rows[i].Time || fill.TransactionTime != rows[i].Time || fill.Commission != "-0.1" {
+					t.Fatal("recovery lost exact IDs, signed commission, clock or ordering")
+				}
+			}
+		})
 	}
 }
 
@@ -114,13 +147,17 @@ func TestRecoverTradesRejectsMalformedRows(t *testing.T) {
 	base := tradeRowAt(5000, 4001, 1700000086000)
 	for _, mutate := range []func(*tradeRow){
 		func(r *tradeRow) { r.Symbol = "BTCUSDC" },
+		func(r *tradeRow) { r.Symbol = "ETHUSDT" },
 		func(r *tradeRow) { r.Side = "HOLD" },
 		func(r *tradeRow) { r.PositionSide = "NEUTRAL" },
 		func(r *tradeRow) { r.Price = "0" },
 		func(r *tradeRow) { r.Quantity = "-1" },
 		func(r *tradeRow) { r.Commission = "NaN" },
 		func(r *tradeRow) { r.CommissionAsset = strings.Repeat("a", 21) },
+		func(r *tradeRow) { r.CommissionAsset = "USDT\x00" },
 		func(r *tradeRow) { r.Time = 0 },
+		func(r *tradeRow) { r.Time = 1700000086400 },
+		func(r *tradeRow) { r.Time = 1699999999999 },
 		func(r *tradeRow) { r.ID = json.Number("0") },
 		func(r *tradeRow) { r.OrderID = json.Number("-1") },
 	} {
@@ -135,15 +172,49 @@ func TestRecoverTradesRejectsMalformedRows(t *testing.T) {
 
 func TestRecoverTradesReportsTruncation(t *testing.T) {
 	c := credentials()
-	q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700086400000}
-	pages := make([][]tradeRow, maxTradePages)
-	for p := range pages {
-		pages[p] = fullTradePage(int64(100000-p*1000), 1700086399999-int64(p*1000))
-	}
-	client := newClient(tradesTransport(t, c, pages))
+	q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700000200000}
+	calls := 0
+	client := newClient(tradeResponses(t, c, func(params url.Values) []tradeRow {
+		calls++
+		start, _ := strconv.ParseInt(params.Get("startTime"), 10, 64)
+		end, _ := strconv.ParseInt(params.Get("endTime"), 10, 64)
+		rows := []tradeRow{}
+		for ms := start; ms <= end && len(rows) < tradePageSize; ms++ {
+			rows = append(rows, tradeRowAt(ms, ms, ms))
+		}
+		return rows
+	}))
 	fills, truncated, err := client.RecoverTrades(context.Background(), c, q)
-	if err != nil || !truncated || len(fills) != maxTradePages*tradePageSize {
-		t.Fatal("truncation not reported", err, len(fills), truncated)
+	if err != nil || !truncated || len(fills) == 0 || len(fills) > maxTradePages*tradePageSize || calls != maxTradePages {
+		t.Fatal("truncation or request bound lost", err, len(fills), truncated, calls)
+	}
+}
+
+func TestRecoverTradesSaturatedMillisecondIsExplicitlyTruncated(t *testing.T) {
+	c := credentials()
+	q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700000000001}
+	rows := make([]tradeRow, tradePageSize)
+	for i := range rows {
+		rows[i] = tradeRowAt(int64(i+1), int64(i+1), q.StartTime)
+	}
+	fills, truncated, err := newClient(tradesTransport(t, c, [][]tradeRow{rows})).RecoverTrades(context.Background(), c, q)
+	if err != nil || !truncated || len(fills) != tradePageSize {
+		t.Fatal("saturated millisecond was skipped or claimed complete", err, truncated)
+	}
+}
+
+func TestRecoverTradesEmptyWindowAndConflictingDuplicates(t *testing.T) {
+	c := credentials()
+	q := TradeQuery{Symbol: "BTCUSDT", StartTime: 1700000000000, EndTime: 1700000000001}
+	fills, truncated, err := newClient(tradesTransport(t, c, [][]tradeRow{{}})).RecoverTrades(context.Background(), c, q)
+	if err != nil || fills == nil || len(fills) != 0 || truncated {
+		t.Fatal("empty response was not a successful explicit empty window", err)
+	}
+	one := tradeRowAt(1, 2, q.StartTime)
+	changed := one
+	changed.Price = "101"
+	if fills, _, err := newClient(tradesTransport(t, c, [][]tradeRow{{one, changed}})).RecoverTrades(context.Background(), c, q); err == nil || fills != nil {
+		t.Fatal("conflicting duplicate produced partial evidence")
 	}
 }
 
@@ -153,8 +224,11 @@ func TestValidTradeParams(t *testing.T) {
 		t.Fatal("valid params rejected")
 	}
 	withFrom := url.Values{"symbol": {"BTCUSDT"}, "startTime": {"1000"}, "endTime": {"2000"}, "limit": {"1000"}, "fromId": {"5"}}
-	if !validTradeParams(withFrom) {
-		t.Fatal("fromId params rejected")
+	if validTradeParams(withFrom) {
+		t.Fatal("incompatible fromId/time selectors accepted")
+	}
+	if !validTradeParams(url.Values{"symbol": {"BTCUSDT"}, "startTime": {"1000"}, "endTime": {"1000"}, "limit": {"1000"}}) {
+		t.Fatal("inclusive one-millisecond query rejected")
 	}
 	for _, bad := range []url.Values{
 		{},

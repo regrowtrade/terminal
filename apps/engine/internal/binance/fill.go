@@ -1,6 +1,6 @@
 package binance
 
-// Fill is a single TRADE execution observed in the stream, deduplicated by
+// Fill is a single TRADE execution from the stream or REST, deduplicated by
 // (orderId, tradeId). Amounts remain original decimal strings; it is never a
 // reconciled ledger entry and does not infer continuity or execution readiness.
 type Fill struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -150,8 +151,20 @@ func testFillLifecycle(t *testing.T, ctx context.Context, store *Store, runtimeU
 
 // Runs only under TEST_DATABASE_URL (CI): recovered REST fills dedup against the
 // stream fills, require credentials/session and remain append-only under RLS.
-func testRecoveredFillsLifecycle(t *testing.T, ctx context.Context, store *Store, hash, account string) {
+func testRecoveredFillsLifecycle(t *testing.T, ctx context.Context, store *Store, admin *sql.DB, hash, account string) {
 	t.Helper()
+	beforeSnapshot, err := store.LatestReadSnapshot(ctx, hash, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeStream, err := store.LatestStreamState(ctx, hash, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := store.SaveRecoveredFills(ctx, hash, account, []binance.Fill{})
+	if err != nil || empty != (RecoveredFillsResult{}) {
+		t.Fatal("empty recovery must succeed after checking session and credentials", err)
+	}
 	fresh := binance.Fill{OrderID: "9007199254741111", TradeID: "22222222", Symbol: "BTCUSDT", Side: "BUY", PositionSide: "LONG", Price: "100.000", Quantity: "1.5", Commission: "-0.10", CommissionAsset: "USDT", EventTime: 5000, TransactionTime: 5000}
 	result, err := store.SaveRecoveredFills(ctx, hash, account, []binance.Fill{fresh})
 	if err != nil || result.Recovered != 1 || result.Duplicates != 0 {
@@ -175,7 +188,100 @@ func testRecoveredFillsLifecycle(t *testing.T, ctx context.Context, store *Store
 	if _, err := store.SaveRecoveredFills(ctx, testDigest(), account, []binance.Fill{fresh}); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatal("unregistered session recovered fills")
 	}
+	if _, err := store.SaveRecoveredFills(ctx, testDigest(), account, []binance.Fill{}); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatal("empty recovery bypassed session revalidation", err)
+	}
 	if _, err := store.SaveRecoveredFills(ctx, hash, "00000000-0000-4000-8000-000000000099", []binance.Fill{fresh}); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("unknown account accepted recovery")
+	}
+	var audits int
+	if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM audit_events WHERE action='account.fills_recovered' AND resource_id=$1 AND metadata IN ('{"recovered":0,"duplicates":0}'::jsonb,'{"recovered":1,"duplicates":0}'::jsonb,'{"recovered":0,"duplicates":1}'::jsonb)`, account).Scan(&audits); err != nil || audits != 3 {
+		t.Fatal("missing or unsafe recovery audit", audits, err)
+	}
+	// An audit failure must roll back all new fills, never acknowledge a partial save.
+	var role string
+	if err := store.db.QueryRowContext(ctx, `SELECT current_user`).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.ExecContext(ctx, `REVOKE INSERT ON audit_events FROM `+role); err != nil {
+		t.Fatal(err)
+	}
+	failed := fresh
+	failed.TradeID = "22222223"
+	result, saveErr := store.SaveRecoveredFills(ctx, hash, account, []binance.Fill{fresh, failed})
+	if _, err := admin.ExecContext(ctx, `GRANT INSERT ON audit_events TO `+role); err != nil {
+		t.Fatal(err)
+	}
+	if saveErr == nil || result != (RecoveredFillsResult{}) {
+		t.Fatal("audit failure acknowledged partial recovery", saveErr, result)
+	}
+	_, total, _, err = store.ListFills(ctx, hash, account, 4000, 200)
+	if err != nil || total != 1 {
+		t.Fatal("audit failure did not roll back the recovered fill", err, total)
+	}
+	// Revocation is checked even for a successful external read with zero fills.
+	revoked := testDigest()
+	if _, err := store.CreateSession(ctx, revoked); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeSession(ctx, revoked, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveRecoveredFills(ctx, revoked, account, []binance.Fill{}); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatal("revoked session saved empty recovery", err)
+	}
+	// Credential presence alone cannot authorize another owner or environment.
+	identity, err := store.ResolveSession(ctx, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ id, owner, environment string }{
+		{"00000000-0000-4000-8000-000000000095", "00000000-0000-4000-8000-000000000001", "production"},
+		{"00000000-0000-4000-8000-000000000096", identity.OwnerID, "testnet"},
+	} {
+		if _, err := admin.ExecContext(ctx, `INSERT INTO exchange_accounts(id,owner_id,exchange,environment,name) VALUES($1,$2,'binance',$3,'Synthetic recovery boundary')`, tc.id, tc.owner, tc.environment); err != nil {
+			t.Fatal(err)
+		}
+		defer admin.ExecContext(ctx, `DELETE FROM exchange_accounts WHERE id=$1`, tc.id)
+		if _, err := admin.ExecContext(ctx, `INSERT INTO exchange_credentials(account_id,owner_id,envelope) VALUES($1,$2,'{}')`, tc.id, tc.owner); err != nil {
+			t.Fatal(err)
+		}
+		defer admin.ExecContext(ctx, `DELETE FROM exchange_credentials WHERE account_id=$1`, tc.id)
+		if _, err := store.SaveRecoveredFills(ctx, hash, tc.id, []binance.Fill{}); !errors.Is(err, ErrAccountMissing) {
+			t.Fatal("unsupported account accepted empty recovery", err)
+		}
+	}
+	afterSnapshot, err := store.LatestReadSnapshot(ctx, hash, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterStream, err := store.LatestStreamState(ctx, hash, account)
+	if err != nil || !reflect.DeepEqual(beforeSnapshot, afterSnapshot) || beforeStream != afterStream {
+		t.Fatal("recovery changed the baseline or stream continuity", err)
+	}
+}
+
+func TestRecoveredFillsRejectMalformedBatchesBeforeDatabase(t *testing.T) {
+	store := &Store{}
+	account := "00000000-0000-4000-8000-000000000001"
+	fresh := binance.Fill{OrderID: "1", TradeID: "2", Symbol: "BTCUSDT", Side: "BUY", PositionSide: "LONG", Price: "100", Quantity: "1", Commission: "-0.1", CommissionAsset: "USDT", EventTime: 1000, TransactionTime: 1000}
+	for _, mutate := range []func(*binance.Fill){
+		func(f *binance.Fill) { f.Price = "NaN" },
+		func(f *binance.Fill) { f.Quantity = "0" },
+		func(f *binance.Fill) { f.TradeID = "9223372036854775808" },
+		func(f *binance.Fill) { f.Commission = "1e-8" },
+		func(f *binance.Fill) { f.EventTime++ },
+	} {
+		invalid := fresh
+		mutate(&invalid)
+		if _, err := store.SaveRecoveredFills(context.Background(), "synthetic", account, []binance.Fill{fresh, invalid}); !errors.Is(err, ErrSnapshotInvalid) {
+			t.Fatal("malformed recovery reached database", err)
+		}
+	}
+	if _, err := store.SaveRecoveredFills(context.Background(), "synthetic", account, make([]binance.Fill, maxRecoveredFills+1)); !errors.Is(err, ErrSnapshotInvalid) {
+		t.Fatal("oversized recovery reached database", err)
+	}
+	if _, err := store.SaveRecoveredFills(context.Background(), "synthetic", account, []binance.Fill{}); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatal("empty recovery did not revalidate the session", err)
 	}
 }

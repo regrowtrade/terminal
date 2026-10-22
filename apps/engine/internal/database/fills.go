@@ -44,13 +44,18 @@ func (s *Store) SaveRecoveredFills(ctx context.Context, hash, account string, fi
 	if !ownerUUID.MatchString(account) {
 		return RecoveredFillsResult{}, ErrAccountMissing
 	}
-	if len(fills) == 0 || len(fills) > maxRecoveredFills {
+	if fills == nil || len(fills) > maxRecoveredFills {
 		return RecoveredFillsResult{}, ErrSnapshotInvalid
+	}
+	for _, fill := range fills {
+		if binance.ValidateRecoveredFill(fill) != nil {
+			return RecoveredFillsResult{}, ErrSnapshotInvalid
+		}
 	}
 	var result RecoveredFillsResult
 	err := s.withSession(ctx, hash, func(tx *sql.Tx, owner string) error {
 		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exchange_credentials WHERE account_id=$1 AND owner_id=$2)`, account, owner).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exchange_accounts a JOIN exchange_credentials c ON c.account_id=a.id AND c.owner_id=a.owner_id WHERE a.id=$1 AND a.owner_id=$2 AND a.exchange='binance' AND a.environment='production')`, account, owner).Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {
@@ -71,7 +76,8 @@ func (s *Store) SaveRecoveredFills(ctx context.Context, hash, account string, fi
 				result.Recovered++
 			}
 		}
-		return nil
+		_, err := tx.ExecContext(ctx, `INSERT INTO audit_events(id,owner_id,action,resource_id,correlation_id,metadata) VALUES(gen_random_uuid(),$1,'account.fills_recovered',$2,gen_random_uuid(),jsonb_build_object('recovered',$3::int,'duplicates',$4::int))`, owner, account, result.Recovered, result.Duplicates)
+		return err
 	})
 	if err != nil {
 		return RecoveredFillsResult{}, err

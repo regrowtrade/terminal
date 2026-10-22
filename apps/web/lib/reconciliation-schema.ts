@@ -23,7 +23,9 @@ export const fillSchema = z
     positionSide: side,
     price: nonnegative,
     quantity: nonnegative,
-    commission: nonnegative,
+    commission: z
+      .string()
+      .regex(/^-?(?:0|[1-9][0-9]{0,37})(?:\.[0-9]{1,18})?$/),
     commissionAsset: z.string().max(20),
     eventTime: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     transactionTime: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
