@@ -18,6 +18,7 @@ El destino único es `terminal/`. `../src/rebuymaster`, `../src/hedge-management
 - Flujo de usuario de solo lectura y journal de eventos privados en `feat/binance-user-data-stream`: recibe `ORDER_TRADE_UPDATE`/`ACCOUNT_UPDATE` con deduplicación y reconexión, pero no reconcilia fills ni establece continuidad. Ver [eventos privados](private-events.md).
 - Base de reconciliación en `feat/reconciliation-foundation`: continuidad durable del flujo y reporte de fills `TRADE` deduplicados sobre la última lectura, con `continuity=established|gapped`. No es un estado reconciliado con el exchange. Ver [reconciliación](reconciliation.md).
 - En el PR #7 (`feat/connected-account-views`), actualizado con `main` después del PR #6: ruta Posiciones de cuenta sin fixtures, con ejemplos opt-in, filtros locales y paginación; conserva la recuperación explícita de comparaciones históricas. Revisión/integración pendientes.
+- En `feat/account-reconciliation-delivery` (entrega pendiente de revisión, desde `main` actualizado tras el PR #18 de recuperación REST): Posiciones/Configuración consumen manualmente el reporte de continuidad/eventos/fills y la recuperación por símbolo/ventana UTC, con correcciones posteriores de protocolo y validación. Evidencia separada de la snapshot, sin monitor continuo, asignación a estrategias, ejecución ni ledger de resultados. No supone integración completa de ninguno de los cuatro proyectos.
 
 ## Orden y puertas del plan
 

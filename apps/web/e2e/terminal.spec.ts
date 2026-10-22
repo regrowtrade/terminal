@@ -5,6 +5,7 @@ import {
 } from "../tests/fixtures/binance";
 import { syntheticComparison } from "../tests/fixtures/comparison";
 import { syntheticOrderLookup } from "../tests/fixtures/order-lookup";
+import { syntheticReconciliation } from "../tests/fixtures/reconciliation";
 
 async function login(page: Page) {
   await page.goto("/");
@@ -34,6 +35,7 @@ test("requires login and protects the preview API", async ({
     "events",
     "reconcile",
     "order",
+    "fills/recover",
   ]) {
     const reading = await request.post(
       `/api/connections/binance/${operation}`,
@@ -287,6 +289,132 @@ test("normal-order lookup shows point-in-time evidence and unresolved absence wi
   ).toHaveCount(0);
   await panel.getByLabel("Identificador de orden").fill("123");
   await expect(panel.getByText(/NO RESUELTA/)).toHaveCount(0);
+});
+
+test("account reconciliation and fill recovery stay explicit, bounded and read-only", async ({
+  page,
+}) => {
+  await login(page);
+  const accountId = "00000000-0000-4000-8000-000000000001";
+  const requests: string[] = [];
+  await page.route("**/api/connections/binance/**", (route) => {
+    const operation = new URL(route.request().url()).pathname.replace(
+      "/api/connections/binance/",
+      "",
+    );
+    requests.push(operation);
+    if (operation === "list")
+      return route.fulfill({
+        json: {
+          enabled: true,
+          accounts: [accountId, "00000000-0000-4000-8000-000000000002"].map(
+            (id, i) => ({
+              id,
+              name: `Synthetic ${i}`,
+              exchange: "binance",
+              environment: "production",
+            }),
+          ),
+        },
+      });
+    if (operation === "reconcile") {
+      expect(route.request().postDataJSON()).toEqual({ accountId });
+      const report = syntheticReconciliation();
+      report.fills[0].commission = "-0.001000000000000001";
+      return route.fulfill({
+        json: {
+          ...report,
+          continuity: "gapped",
+          eventsTruncated: true,
+          fillsTruncated: true,
+          totalFills: 250,
+        },
+      });
+    }
+    if (operation === "fills/recover") {
+      const query = {
+        accountId,
+        symbol: "BTCUSDT",
+        startTime: Date.parse("2020-01-01T00:00:00Z"),
+        endTime: Date.parse("2020-01-02T00:00:00Z"),
+      };
+      expect(route.request().postDataJSON()).toEqual(query);
+      return route.fulfill({
+        json: {
+          source: "binance-production",
+          mode: "read_only",
+          executionReady: false,
+          symbol: query.symbol,
+          startTime: query.startTime,
+          endTime: query.endTime,
+          recovered: 1,
+          duplicates: 2,
+          truncated: true,
+        },
+      });
+    }
+    return route.fulfill({
+      status: 503,
+      json: { error: "Unexpected synthetic operation" },
+    });
+  });
+  await page.goto("/positions");
+  expect(requests).toEqual([]);
+  await page
+    .getByRole("button", { name: "Comprobar conexión", exact: true })
+    .click();
+  const panel = page.getByRole("region", { name: "Reconciliación de cuenta" });
+  await expect(panel).toBeVisible();
+  expect(requests).toEqual(["list"]);
+  const reportButton = panel.getByRole("button", {
+    name: "Consultar reporte de reconciliación",
+  });
+  await reportButton.click();
+  await expect(panel.getByText(/CONTINUIDAD CON HUECOS/)).toBeVisible();
+  await expect(panel.getByText(/EVENTOS TRUNCADOS/)).toBeVisible();
+  await expect(panel.getByText(/FILLS TRUNCADOS/)).toBeVisible();
+  await expect(
+    panel.getByRole("cell", { name: "9007199254740993 / 12345678" }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole("cell", { name: "0.0005", exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole("cell", { name: "-0.001000000000000001 / USDT" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await panel.getByLabel("Símbolo de recuperación").fill("BTCUSDT");
+  await panel.getByLabel("Inicio de ventana (UTC)").fill("2020-01-01T00:00");
+  await panel.getByLabel("Fin de ventana (UTC)").fill("2020-01-02T00:00");
+  await panel
+    .getByRole("button", { name: "Recuperar y guardar fills" })
+    .click();
+  await expect(panel.getByText(/RECUPERACIÓN GUARDADA/)).toBeVisible();
+  await expect(panel.getByText(/RECUPERACIÓN TRUNCADA/)).toBeVisible();
+  await expect(panel.getByText(/REPORTE PUNTUAL/)).toHaveCount(0);
+  expect(requests).toEqual(["list", "reconcile", "fills/recover"]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await reportButton.click();
+  await expect(panel.getByText(/REPORTE PUNTUAL/)).toBeVisible();
+  await expect(
+    panel.getByRole("button", {
+      name: /enviar orden|cancelar orden|ejecutar/i,
+    }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Cuenta de lectura", { exact: true })
+    .selectOption("00000000-0000-4000-8000-000000000002");
+  await expect(panel.getByRole("table")).toHaveCount(0);
+  await expect(panel.getByLabel("Símbolo de recuperación")).toHaveValue("");
+  expect(requests).toEqual(["list", "reconcile", "fills/recover", "reconcile"]);
 });
 
 test("settings can revoke every existing session", async ({

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { BinanceAccountData } from "./binance-account-data";
 import { BinanceOrderLookup } from "./binance-order-lookup";
+import { BinanceReconciliation } from "./binance-reconciliation";
 import { ObservationComparison } from "./observation-comparison";
 import {
   storedComparisonSchema,
@@ -254,9 +255,16 @@ export function BinanceConnection() {
         </section>
       )}
       {comparison && <ObservationComparison comparison={comparison} />}
+      {!busy && selected && state?.accounts.some((a) => a.id === selected) && (
+        <BinanceReconciliation
+          key={`reconciliation:${selected}`}
+          accountId={selected}
+          enabled={hydrated && state.enabled}
+        />
+      )}
       {selected && state?.accounts.some((a) => a.id === selected) && (
         <BinanceOrderLookup
-          key={selected}
+          key={`order:${selected}`}
           accountId={selected}
           disabled={!hydrated || busy || !state.enabled}
         />

@@ -15,6 +15,7 @@ type fillStore struct {
 	credentialErr error
 	saveErr       error
 	savedCount    int
+	saveCalls     int
 	saveResult    database.RecoveredFillsResult
 }
 
@@ -26,6 +27,7 @@ func (s *fillStore) ReadAccountCredential(ctx context.Context, hash, account str
 }
 
 func (s *fillStore) SaveRecoveredFills(_ context.Context, _, _ string, fills []binance.Fill) (database.RecoveredFillsResult, error) {
+	s.saveCalls++
 	s.savedCount = len(fills)
 	if s.saveErr != nil {
 		return database.RecoveredFillsResult{}, s.saveErr
@@ -71,6 +73,22 @@ func TestRecoverFillsDecryptsReadsAndPersists(t *testing.T) {
 	}{
 		{name: "recovered and truncated", wantCalls: 1, wantRecovered: 1},
 		{name: "reader error", mutate: func(_ *Service, _ *fillStore, r *fillReader) { r.err = binance.ErrUnavailable }, want: binance.ErrUnavailable, wantCalls: 1},
+		{name: "empty window", mutate: func(_ *Service, s *fillStore, r *fillReader) {
+			r.fills = []binance.Fill{}
+			s.saveResult = database.RecoveredFillsResult{}
+		}, wantCalls: 1},
+		{name: "missing fills", mutate: func(_ *Service, _ *fillStore, r *fillReader) { r.fills = nil }, want: binance.ErrResponse, wantCalls: 1},
+		{name: "wrong symbol", mutate: func(_ *Service, _ *fillStore, r *fillReader) { r.fills[0].Symbol = "ETHUSDT" }, want: binance.ErrResponse, wantCalls: 1},
+		{name: "before window", mutate: func(_ *Service, _ *fillStore, r *fillReader) {
+			r.fills[0].TransactionTime = query.StartTime - 1
+			r.fills[0].EventTime = query.StartTime - 1
+		}, want: binance.ErrResponse, wantCalls: 1},
+		{name: "exclusive end", mutate: func(_ *Service, _ *fillStore, r *fillReader) {
+			r.fills[0].TransactionTime = query.EndTime
+			r.fills[0].EventTime = query.EndTime
+		}, want: binance.ErrResponse, wantCalls: 1},
+		{name: "invented event clock", mutate: func(_ *Service, _ *fillStore, r *fillReader) { r.fills[0].EventTime++ }, want: binance.ErrResponse, wantCalls: 1},
+		{name: "invalid fill", mutate: func(_ *Service, _ *fillStore, r *fillReader) { r.fills[0].Price = "NaN" }, want: binance.ErrResponse, wantCalls: 1},
 		{name: "credential removed", mutate: func(_ *Service, s *fillStore, _ *fillReader) { s.credentialErr = database.ErrAccountMissing }, want: database.ErrAccountMissing},
 		{name: "wrong account", mutate: func(_ *Service, s *fillStore, _ *fillReader) { s.binding.AccountID = query.Symbol }, want: vault.ErrVault},
 		{name: "corrupt credential", mutate: func(_ *Service, s *fillStore, _ *fillReader) { s.envelope = vault.Envelope{} }, want: vault.ErrVault},
@@ -92,9 +110,11 @@ func TestRecoverFillsDecryptsReadsAndPersists(t *testing.T) {
 				if result.Recovered != tc.wantRecovered || !result.Truncated || result.ExecutionReady || result.Source != "binance-production" || result.Mode != "read_only" {
 					t.Fatal("summary lost semantics", result)
 				}
-				if store.savedCount != 1 || reader.query != query {
+				if store.savedCount != len(reader.fills) || store.saveCalls != 1 || reader.query != query {
 					t.Fatal("fill recovery did not forward stored query or fills")
 				}
+			} else if !errors.Is(err, database.ErrSessionInvalid) && store.saveCalls != 0 {
+				t.Fatal("invalid recovery reached persistence")
 			}
 		})
 	}

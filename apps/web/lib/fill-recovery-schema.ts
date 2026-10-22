@@ -21,11 +21,16 @@ export const fillRecoverySchema = z
     mode: z.literal("read_only"),
     executionReady: z.literal(false),
     symbol,
-    startTime: z.number().int().positive(),
-    endTime: z.number().int().positive(),
-    recovered: z.number().int().nonnegative(),
-    duplicates: z.number().int().nonnegative(),
+    startTime: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    endTime: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    recovered: z.number().int().nonnegative().max(20000),
+    duplicates: z.number().int().nonnegative().max(20000),
     truncated: z.boolean(),
   })
   .strict()
-  .refine((r) => r.endTime > r.startTime);
+  .refine(
+    (r) =>
+      r.endTime > r.startTime &&
+      r.endTime - r.startTime <= windowMs &&
+      r.recovered + r.duplicates <= 20000,
+  );

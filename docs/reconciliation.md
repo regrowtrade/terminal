@@ -32,6 +32,24 @@ Solo consulta PostgreSQL: no descifra claves ni contacta Binance, y funciona con
 - El buffer es volátil: una caída del proceso o un fallo al guardar puede perder eventos pendientes. Se vacía en lotes de hasta 1000 eventos, compatibles con el límite transaccional del journal; no ofrece replay ni recuperación de fills perdidos.
 - No se infiere comisiones/funding ni PnL realizado a partir de un fill, ni cancelación/cierre a partir de una ausencia.
 
+## Consumo manual en la interfaz
+
+En `feat/account-reconciliation-delivery`, Posiciones y Configuración incluyen **Evidencia de reconciliación** tras comprobar las cuentas provisionadas. **Consultar reporte de reconciliación** consulta únicamente PostgreSQL y funciona con el lector externo desactivado. Expone lectura base, continuidad registrada, conteos, último evento y fills con paginación local de 50; los avisos de truncamiento no desaparecen al paginar. Incluso `established` se presenta como «sin huecos registrados», nunca como cuenta actual o ejecución habilitada.
+
+**Recuperar y guardar fills** consume el endpoint REST existente con símbolo y ventana UTC explícitos de hasta siete días; requiere habilitar el lector externo. Muestra conteos de nuevos/duplicados y truncamiento, no resultados financieros. Una recuperación retira el reporte anterior y no solicita otro automáticamente. Ante una respuesta ambigua puede haberse guardado evidencia: consultar el reporte antes de reintentar. La recuperación no restablece continuidad ni añade al reporte fills anteriores al corte del baseline.
+
+Cambiar cuenta/fuente o iniciar otra lectura/comparación desmonta el panel y aborta la petición del navegador; las respuestas tardías se ignoran. No cancela necesariamente un guardado ya iniciado en el servidor. Las pruebas de componentes y navegador usan datos sintéticos, sin exchange ni claves reales. Sin nuevas rutas ni migraciones; el contrato existente se actualiza para reflejar los límites y las comisiones con signo recuperadas por REST. La recuperación REST inicial ya está en `main` mediante el PR #18 (`25fa298`); esta entrega añade su consumo UI y las correcciones posteriores, todavía pendientes de revisión. No es un monitor continuo ni un estado fundido de posiciones/órdenes. Ver [vistas de cuenta](account-views.md).
+
+### Correcciones de revisión de la recuperación REST
+
+La revisión local de integración corrigió la combinación incompatible de `fromId` con fechas: el adaptador ahora usa solo símbolo, límite e inicio/fin, y subdivide las ventanas saturadas. El inicio es incluido y el fin excluido; el `endTime` inclusivo enviado a Binance se reduce en un milisegundo. No se asume un orden ascendente/descendente de las respuestas ni se avanza un cursor de tiempo saltándose trades que comparten milisegundo.
+
+El presupuesto máximo sigue siendo 20 consultas de trades (hasta 1000 filas por consulta). Si se agota con ventanas pendientes, o un solo milisegundo sigue saturado, devuelve `truncated=true`: puede haber menos de 20000 fills únicos por los solapamientos entre consultas de una ventana y sus subventanas. La deduplicación rechaza evidencia contradictoria para una misma clave. La ventana máxima de siete días es un límite de consulta, **no** una garantía de retención o recuperación completa.
+
+El adaptador y el servicio comprueban símbolo/ventana; el servicio y PostgreSQL repiten la validación de cada fill. Una recuperación vacía válida devuelve cero después de revalidar sesión, cuenta Binance production y credencial. Fills y auditoría `account.fills_recovered` con solo conteos se confirman en una transacción; si la auditoría falla, no queda evidencia parcial. No modifica snapshot ni continuidad. La web valida que símbolo y fechas de respuesta coincidan con la petición; el reporte conserva las comisiones REST con su signo original, sin agregarlas ni interpretarlas como PnL.
+
+Se comprobaron estas rutas con transportes sintéticos y PostgreSQL 15 local desechable, incluyendo revocación, credenciales retiradas, aislamiento y rollback. Ver [revisión de integración](integration-review.md). Referencia del protocolo: [conector oficial Binance, `get_account_trades`](https://github.com/binance/binance-futures-connector-python/blob/main/binance/um_futures/account.py).
+
 ## Despliegue
 
 Aplicar las migraciones hasta `0010_order_observations.sql` y los grants antes de actualizar todos los motores; web y motor se actualizan juntos para el endpoint nuevo. Ver [eventos privados](private-events.md) y [roadmap](roadmap.md).

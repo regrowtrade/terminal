@@ -145,6 +145,14 @@ func (s *Service) RecoverFills(ctx context.Context, hash, account string, query 
 	if err != nil {
 		return binance.FillRecovery{}, err
 	}
+	if fills == nil || len(fills) > 20000 {
+		return binance.FillRecovery{}, binance.ErrResponse
+	}
+	for _, fill := range fills {
+		if binance.ValidateRecoveredFill(fill) != nil || fill.Symbol != query.Symbol || fill.TransactionTime < query.StartTime || fill.TransactionTime >= query.EndTime {
+			return binance.FillRecovery{}, binance.ErrResponse
+		}
+	}
 	result, err := s.Store.SaveRecoveredFills(ctx, hash, account, fills)
 	if err != nil {
 		return binance.FillRecovery{}, err

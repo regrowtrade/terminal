@@ -103,3 +103,14 @@ it("rejects overclaiming engine payloads without leaking details", async () => {
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain("must-not-leak");
 });
+
+it("preserves signed REST commissions as original decimals", async () => {
+  const body = syntheticReconciliation();
+  body.fills[0].commission = "-0.001000000000000001";
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  const response = await POST(request());
+  expect(response.status).toBe(200);
+  expect((await response.json()).fills[0].commission).toBe(
+    "-0.001000000000000001",
+  );
+});

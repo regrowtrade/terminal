@@ -154,6 +154,16 @@ export async function connectionRequest(
       )
         throw new Error("Order query mismatch");
     }
+    if (operation === "fills/recover") {
+      const sent = fillRecoveryRequestSchema.parse(parsed.data);
+      const received = fillRecoverySchema.parse(data);
+      if (
+        received.symbol !== sent.symbol ||
+        received.startTime !== sent.startTime ||
+        received.endTime !== sent.endTime
+      )
+        throw new Error("Fill recovery query mismatch");
+    }
     return json(data, 200);
   } catch {
     return json(

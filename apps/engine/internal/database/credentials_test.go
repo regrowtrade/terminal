@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"regrow/engine/internal/binance"
 	"regrow/engine/internal/vault"
 	"strings"
 	"testing"
@@ -97,7 +98,7 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	testUserEventLifecycle(t, ctx, store, hash, id)
 	testStreamStateLifecycle(t, ctx, store, hash, id)
 	testFillLifecycle(t, ctx, store, runtimeURI, hash, id)
-	t.Run("recovered_fills", func(t *testing.T) { testRecoveredFillsLifecycle(t, ctx, store, hash, id) })
+	t.Run("recovered_fills", func(t *testing.T) { testRecoveredFillsLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("order_observations", func(t *testing.T) { testOrderObservationLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("strategy_plans", func(t *testing.T) { testPlanLifecycle(t, ctx, store, admin, hash, id) })
 	t.Run("legacy_snapshot_transition", func(t *testing.T) {
@@ -120,6 +121,9 @@ func testCredentialLifecycle(t *testing.T, ctx context.Context, store *Store, ad
 	}
 	if err := store.SaveOrderObservation(ctx, hash, id, syntheticOrderLookup()); !errors.Is(err, ErrAccountMissing) {
 		t.Fatal("removed credential can save order observations")
+	}
+	if _, err := store.SaveRecoveredFills(ctx, hash, id, []binance.Fill{}); !errors.Is(err, ErrAccountMissing) {
+		t.Fatal("removed credential can save an empty fill recovery", err)
 	}
 	var observedIntent string
 	if err := admin.QueryRowContext(ctx, `SELECT intent_id::text FROM binance_intent_observations WHERE account_id=$1 LIMIT 1`, id).Scan(&observedIntent); err != nil {
