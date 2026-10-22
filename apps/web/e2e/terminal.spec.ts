@@ -43,6 +43,7 @@ test("requires login and protects the preview API", async ({
     "events",
     "reconcile",
     "order",
+    "algo",
     "fills/recover",
   ]) {
     const reading = await request.post(
@@ -296,6 +297,19 @@ test("settings keeps live access disabled for local sessions and never requests 
       .getByRole("alert")
       .filter({ hasText: "requieren sesiones PostgreSQL" }),
   ).toContainText("requieren sesiones PostgreSQL");
+  const algoStatus = await page.evaluate(async () => {
+    const response = await fetch("/api/connections/binance/algo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountId: "00000000-0000-4000-8000-000000000001",
+        symbol: "BTCUSDT",
+        algoId: "9007199254740993",
+      }),
+    });
+    return response.status;
+  });
+  expect(algoStatus).toBe(503);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

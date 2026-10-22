@@ -22,6 +22,7 @@ type ConnectionService interface {
 	Events(context.Context, string, string, int64) ([]database.StoredEvent, bool, error)
 	Reconcile(context.Context, string, string) (reconcile.Report, error)
 	LookupOrder(context.Context, string, string, binance.OrderQuery) (binance.OrderLookup, error)
+	LookupAlgoOrder(context.Context, string, string, binance.AlgoQuery) (binance.AlgoLookup, error)
 	ObserveIntent(context.Context, string, string, string) (database.StoredIntentObservation, error)
 	IntentObservations(context.Context, string, string, string) ([]database.StoredIntentObservation, error)
 	RecoverFills(context.Context, string, string, binance.TradeQuery) (binance.FillRecovery, error)

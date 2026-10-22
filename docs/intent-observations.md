@@ -28,7 +28,7 @@ Comparación decimal sin floats ni tolerancias: `1` y `1.000` son iguales; difer
 
 ## Consumo en Planes guardados
 
-La entrega `feat/intent-observations-ui`, basada en `main` con el PR #19 integrado, añade este flujo en Configuración:
+La entrega `feat/intent-observations-ui`, integrada por el propietario en `main` mediante el PR #20, añade este flujo en Configuración:
 
 1. La carga inicial consulta cuentas provisionadas y planes guardados en PostgreSQL, nunca el exchange. **Ver intenciones** carga únicamente las del plan elegido; no hay una cascada de peticiones para todos los planes.
 2. **Investigar ENTRY/REBUY** abre un único panel con plan, intención, símbolo, lado, cantidad/precio e ID de cliente guardados, sin editarlos. Solo se ofrece para intenciones normales de planes `clean`/`dca` válidos; TP/SL condicionales y cobertura muestran su limitación, sin una alternativa de ejecución.
@@ -53,4 +53,4 @@ No aplicado a Railway ni validado con claves reales. Tests sintéticos y Postgre
 
 ## Pendientes
 
-Consulta algo e investigación de intenciones condicionales, estado reconciliado tras reinicios/desconexiones, relación demostrable con envíos durables, ejecutor testnet recuperable, protección confirmada y automatizaciones. La consulta explícita de una orden condicional y la recuperación REST manual de fills se añadieron en entregas posteriores de cuenta; no son investigación de intenciones TP/SL ni recuperación automática. Esta UI no sustituye esos controles.
+Consumo UI algo e investigación de intenciones condicionales, estado reconciliado tras reinicios/desconexiones, relación demostrable con envíos durables, ejecutor testnet recuperable, protección confirmada y automatizaciones. La [consulta algo por API/proxy](algo-order-lookup.md) se añade en una entrega posterior pendiente de revisión, sin asociación a intenciones. La consulta explícita de una orden condicional y la recuperación REST manual de fills se añadieron en entregas posteriores de cuenta; no son investigación de intenciones TP/SL ni recuperación automática. Esta UI no sustituye esos controles.

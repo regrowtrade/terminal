@@ -71,7 +71,7 @@ func (c *Client) cooldown(header string) {
 }
 func (c *Client) get(ctx context.Context, path string, credentials *vault.Credentials, timestamp int64, target any) error {
 	// A single-order read requires explicit validated selectors.
-	if path == "/fapi/v1/order" {
+	if path == "/fapi/v1/order" || path == "/fapi/v1/algoOrder" {
 		return ErrUnavailable
 	}
 	return c.getWithParams(ctx, path, credentials, timestamp, nil, target)
@@ -99,6 +99,16 @@ func (c *Client) getWithParams(ctx context.Context, path string, credentials *va
 			}
 		}
 		max = 64 * 1024
+	case "/fapi/v1/algoOrder":
+		if !validAlgoSelector(params.Get("algoId"), params.Get("clientAlgoId")) || len(params) != 1 {
+			return ErrAlgoQuery
+		}
+		for _, values := range params {
+			if len(values) != 1 {
+				return ErrAlgoQuery
+			}
+		}
+		max = 64 * 1024
 	case "/fapi/v1/userTrades":
 		if !validTradeParams(params) {
 			return ErrTradeQuery
@@ -109,7 +119,7 @@ func (c *Client) getWithParams(ctx context.Context, path string, credentials *va
 	default:
 		return ErrUnavailable
 	}
-	if path != "/fapi/v1/order" && path != "/fapi/v1/userTrades" && len(params) != 0 {
+	if path != "/fapi/v1/order" && path != "/fapi/v1/algoOrder" && path != "/fapi/v1/userTrades" && len(params) != 0 {
 		return ErrUnavailable
 	}
 	// Public metadata never receives keys; private reads always require them.
@@ -149,7 +159,7 @@ func (c *Client) getWithParams(ctx context.Context, path string, credentials *va
 	if response.StatusCode == 401 || response.StatusCode == 403 {
 		return ErrPermissions
 	}
-	if response.StatusCode != 200 && path != "/fapi/v1/order" {
+	if response.StatusCode != 200 && path != "/fapi/v1/order" && path != "/fapi/v1/algoOrder" {
 		return ErrUnavailable
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, int64(max)+1))
@@ -157,12 +167,12 @@ func (c *Client) getWithParams(ctx context.Context, path string, credentials *va
 		return ErrResponse
 	}
 	if response.StatusCode != 200 {
-		// Only this documented code on the normal-order query means no order
+		// Only this documented code on an explicit order query means no order
 		// was returned. It is not evidence that an order never existed.
 		var failure struct {
 			Code int `json:"code"`
 		}
-		if path == "/fapi/v1/order" && response.StatusCode == 400 && json.Unmarshal(body, &failure) == nil && failure.Code == -2013 {
+		if (path == "/fapi/v1/order" || path == "/fapi/v1/algoOrder") && response.StatusCode == 400 && json.Unmarshal(body, &failure) == nil && failure.Code == -2013 {
 			return errOrderNotFound
 		}
 		return ErrUnavailable

@@ -34,6 +34,8 @@ Se persisten identidad personal, sesiones, eventos de sesión, envelopes de cred
 
 Usar lockfiles, `npm ci`, `npm audit --omit=dev`, `go vet` y análisis de vulnerabilidades periódico. Revisar el informe completo, sin downgrades automáticos forzados.
 
+El 22 de octubre de 2026, el arranque de las pruebas de navegador bloqueó Next.js `16.4.0`; `npm audit --omit=dev` confirmó [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw), [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r) y [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr). Se actualizan `next` y `eslint-config-next` a **16.4.2**, con lockfile y sin cambios en autenticación/configuración ni salto de versión mayor. Tras instalar el parche, el audit de runtime devuelve **0 vulnerabilidades**. Esto no demuestra ausencia de exposición previa ni acredita despliegue: el propietario debe revisar/integrar y desplegar el parche aprobado. No desactivar ni el aviso ni el audit para superar las puertas.
+
 La rama de infraestructura requiere Go 1.26.9+ y fija pgx 5.9.2, x/crypto 0.58.0 y x/text 0.43.0 tras detectar vulnerabilidades en versiones anteriores con govulncheck. CI ejecuta el scanner fijado a v1.9.0 además de tests y vet; no considerar una versión segura indefinidamente sin volver a comprobarla.
 
 En la instalación inicial, npm audit informa GHSA-vfj7-8cjw-p6xm en `braces` 3.0.3 y dependencias de ESLint/Next lint (cinco entradas de severidad alta). El registry consultado no ofrece una versión reparada de braces. No pertenece al runtime de producción y recibe globs locales confiables; no aceptar patrones no confiables en esas herramientas. No se declara solucionado. Revalidar y actualizar cuando exista un parche compatible.
