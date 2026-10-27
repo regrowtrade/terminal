@@ -45,7 +45,7 @@ Vistas: `app/page.tsx`, `app/login/page.tsx`, `app/(main)/dashboard/page.tsx`, `
 
 ### `hedge-management` — comandos de Telegram (`script.py`, `bot_handlers.py`)
 
-Comandos y entradas: `start`, `help`, `status`, `posiciones`, `abortar_cobertura`, `cancel`, y la conversación de `iniciar_cobertura` (símbolo, lado, porcentaje, precio de inicio, pérdida máxima y confirmación). No expone HTTP.
+Comandos y entradas: `/start`, `/help`, `/status`, `/posiciones`, `/abortar` y `/cancel`; la conversación se inicia con `/cobertura` (símbolo, lado, porcentaje, precio de inicio, pérdida máxima y confirmación). No expone HTTP.
 
 ### `automatic-tp` — entradas de consola
 
