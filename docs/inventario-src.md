@@ -67,7 +67,7 @@ No expone endpoints ni vistas. Su única entrada es la consola: ticker y porcent
 - Los cuatro proyectos leen credenciales desde el entorno o `.env`. Se registran solo nombres de archivo y su tipo; no se incluyen valores ni nombres de variables con su contenido.
 - No copiar `.env`, tokens, claves ni bases locales (`hedge_state.db`). Auditar exposición y rotar credenciales antes de cualquier migración (REG-9 y REG-10).
 
-## 5. Piloto propuesto (pendiente de validación del propietario)
+## 5. Piloto elegido
 
 **Propuesta:** `trading-journal`, en modo lectura: consulta de cuentas, operaciones y estadísticas dentro de `terminal`.
 
@@ -76,4 +76,4 @@ No expone endpoints ni vistas. Su única entrada es la consola: ticker y porcent
 - **Tamaño:** medio; requiere un esquema de lectura y pruebas de propiedad de datos.
 - **Pendientes:** diseño de tablas en PostgreSQL (`terminal` aún no tiene journal persistido), decisión sobre la migración de datos de Neon y revisión de cómo se valida la identidad.
 
-Esta propuesta no está aprobada. Queda pendiente la validación del propietario antes de elegir el piloto.
+Validado por el propietario (Gregory Machacon) en el comentario de REG-6: "Piloto validado: trading-journal en modo lectura" (2026-10-27). Este piloto queda elegido; su implementación requiere ticket propio.
